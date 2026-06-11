@@ -10,6 +10,7 @@ const http    = require('http');
 const app  = express();
 const PORT = process.env.PORT || 3026;
 const DEV  = process.env.NODE_ENV !== 'production';
+if (!DEV) app.set('trust proxy', 1); // Render/Heroku: proxy HTTPS→HTTP
 const DATA = path.join(__dirname, 'dados');
 const CSV  = path.join(DATA, 'Copa 2026 - Rodada 01.csv');
 const USERS    = path.join(DATA, 'users.json');
