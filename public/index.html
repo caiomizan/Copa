@@ -240,6 +240,35 @@
     .spinner { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent);
       border-radius: 50%; animation: spin .7s linear infinite; margin: 4rem auto; }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Lista de Jogos ── */
+    .lista-row {
+      background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+      margin-bottom: .35rem; padding: .5rem .9rem;
+      display: grid; grid-template-columns: 68px 1fr auto 1fr auto;
+      align-items: center; gap: .5rem; transition: border-color .2s;
+    }
+    .lista-row:hover { border-color: #2e4a70; }
+    .lista-info { display: flex; flex-direction: column; gap: .15rem; }
+    .lista-grupo { font-size: .62rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .06em; }
+    .lista-hora { font-size: .68rem; color: var(--muted); }
+    .lista-team { font-weight: 600; font-size: .875rem; }
+    .lista-team.right { text-align: right; }
+    .lista-center { display: flex; align-items: center; gap: .3rem; justify-content: center; }
+    .lista-score-inp {
+      width: 42px; height: 36px; background: #09131f;
+      border: 2px solid var(--border); border-radius: 6px;
+      color: var(--text); font-size: 1rem; font-weight: 800; text-align: center;
+      transition: border-color .2s;
+    }
+    .lista-score-inp:focus { outline: none; border-color: var(--accent); }
+    .lista-score-disp {
+      width: 42px; height: 36px; display: flex; align-items: center; justify-content: center;
+      font-size: 1rem; font-weight: 800;
+      background: #09131f; border-radius: 6px; border: 2px solid var(--border);
+    }
+    .lista-score-disp.pending { color: var(--muted); font-size: .82rem; }
+    .lista-badge { min-width: 80px; text-align: right; }
   </style>
 </head>
 <body>
@@ -286,6 +315,7 @@
   <nav class="tabs">
     <button class="tab-btn active" data-tab="grupos" onclick="setTab('grupos')">Grupos</button>
     <button class="tab-btn"        data-tab="bolao"  onclick="setTab('bolao')">Bolão</button>
+    <button class="tab-btn"        data-tab="lista"  onclick="setTab('lista')">📋 Lista</button>
   </nav>
 
   <section id="s-grupos">
@@ -299,6 +329,12 @@
     <div class="inner">
       <div id="b-leaderboard"></div>
       <div id="b-palpites"></div>
+    </div>
+  </section>
+
+  <section id="s-lista" hidden>
+    <div class="inner" id="lista-inner">
+      <div class="spinner"></div>
     </div>
   </section>
 </div>
@@ -328,7 +364,7 @@
 <script>
 /* ── State ────────────────────────────────────────── */
 const S = {
-  user: null, matches: [], csvHeader: '',
+  user: null, matches: [], csvFiles: [],
   myPals: {}, pending: {}, bolao: [],
   activeGroup: null, activeTab: 'grupos',
 };
@@ -360,12 +396,12 @@ async function init() {
 }
 
 async function loadAll() {
-  const [csvText, myPals, bolao] = await Promise.all([
+  const [csvFiles, myPals, bolao] = await Promise.all([
     api('GET', '/api/csv'),
     api('GET', '/api/palpites/me'),
     api('GET', '/api/bolao'),
   ]);
-  parseCSV(csvText);
+  parseAllCSVs(csvFiles);
   S.myPals  = myPals  || {};
   S.pending = JSON.parse(JSON.stringify(S.myPals));
   S.bolao   = bolao   || [];
@@ -414,35 +450,51 @@ async function doLogout() {
 }
 
 /* ── CSV ──────────────────────────────────────────── */
-function parseCSV(text) {
-  const lines = text.split(/\r?\n/).filter(l => l.trim());
-  S.csvHeader = lines[0] || '';
-  S.matches = lines.slice(1).map((line, i) => {
-    const c = line.split(',');
-    let p1 = (c[1] || '').trim(), p2 = (c[2] || '').trim();
-    if (/^\d+x\d+$/i.test(p1)) { [p1, p2] = p1.split(/x/i); }
-    return { id: i, sel1: c[0]?.trim(), p1: p1 === '' ? '' : +p1, p2: p2 === '' ? '' : +p2,
-             sel2: c[3]?.trim(), dia: c[6]?.trim(), hora: c[7]?.trim(), grupo: c[8]?.trim() };
+function parseAllCSVs(files) {
+  S.csvFiles = files || [];
+  S.matches = [];
+  let id = 0;
+  S.csvFiles.forEach(({ filename, text }) => {
+    (text || '').split(/\r?\n/).filter(l => l.trim()).slice(1).forEach(line => {
+      const c = line.split(',');
+      let p1 = (c[1] || '').trim(), p2 = (c[2] || '').trim();
+      if (/^\d+x\d+$/i.test(p1)) { [p1, p2] = p1.split(/x/i); }
+      S.matches.push({
+        id: id++, filename,
+        sel1: c[0]?.trim(), p1: p1 === '' ? '' : +p1, p2: p2 === '' ? '' : +p2,
+        sel2: c[3]?.trim(), dia: c[6]?.trim(), hora: c[7]?.trim(), grupo: c[8]?.trim(),
+      });
+    });
   });
   const groups = [...new Set(S.matches.map(m => m.grupo).filter(Boolean))];
   if (!S.activeGroup || !groups.includes(S.activeGroup)) S.activeGroup = groups[0] || null;
 }
 
-function generateCSV() {
-  const hdr = S.csvHeader || 'Seleção 1,Placar 1,Placar 2,Seleção 2,Vencedor,Saldo de Gols,Dia,Hora,Grupo';
-  return [hdr, ...S.matches.map(m => {
+function getRodada(filename) {
+  const m = (filename || '').match(/Rodada\s*0*(\d+)/i);
+  return m ? 'Rd.' + m[1] : (filename || '').replace(/\.csv$/i, '');
+}
+
+function generateCSV(filename) {
+  const fileObj = S.csvFiles.find(f => f.filename === filename);
+  const header = (fileObj?.text || '').split(/\r?\n/)[0] ||
+    'Seleção 1,Placar 1,Placar 2,Seleção 2,Vencedor,Saldo de Gols,Dia,Hora,Grupo';
+  const rows = S.matches.filter(m => m.filename === filename).map(m => {
     const p1 = typeof m.p1 === 'number' ? m.p1 : '';
     const p2 = typeof m.p2 === 'number' ? m.p2 : '';
     const venc  = p1 !== '' && p2 !== '' ? (+p1 > +p2 ? m.sel1 : +p2 > +p1 ? m.sel2 : 'Empate') : '';
     const saldo = p1 !== '' && p2 !== '' ? String(+p1 - +p2) : '';
     return [m.sel1, p1, p2, m.sel2, venc, saldo, m.dia, m.hora, m.grupo].join(',');
-  })].join('\r\n');
+  });
+  return [header, ...rows].join('\r\n');
 }
 
 async function saveCSV() {
   try {
-    await fetch('/api/csv', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: generateCSV() })
-      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); });
+    const filenames = [...new Set(S.matches.map(m => m.filename))];
+    for (const fn of filenames) {
+      await api('POST', '/api/csv', { filename: fn, text: generateCSV(fn) });
+    }
     S.bolao = await api('GET', '/api/bolao');
     if (S.activeTab === 'bolao') renderLeaderboard();
     toast('Resultados salvos! ✓', 'ok');
@@ -465,12 +517,11 @@ function setTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.getElementById('s-grupos').hidden = tab !== 'grupos';
   document.getElementById('s-bolao').hidden  = tab !== 'bolao';
+  document.getElementById('s-lista').hidden  = tab !== 'lista';
   clearInterval(lockTimer);
   if (tab === 'grupos') renderGrupos();
-  if (tab === 'bolao')  {
-    renderBolao();
-    lockTimer = setInterval(renderMyPalpites, 30000); // refresh lock states
-  }
+  if (tab === 'bolao')  { renderBolao(); lockTimer = setInterval(renderMyPalpites, 30000); }
+  if (tab === 'lista')  renderLista();
 }
 
 /* ── Grupos ───────────────────────────────────────── */
@@ -518,7 +569,8 @@ function renderGrupos() {
   // Matches title
   const mt = document.createElement('div');
   mt.className = 'sec-title'; mt.style.marginTop = '1.5rem';
-  mt.textContent = 'Jogos — Rodada 01';
+  const rodadas = [...new Set(gMatches.map(m => getRodada(m.filename)))].join(', ');
+  mt.textContent = `Jogos — ${rodadas}`;
   inner.appendChild(mt);
 
   gMatches.forEach(m => inner.appendChild(buildMatchCard(m)));
@@ -767,6 +819,62 @@ async function deleteUser(username) {
   } catch (e) { toast(e.message, 'err'); }
 }
 
+/* ── Lista de Jogos ───────────────────────────────── */
+function renderLista() {
+  const el = document.getElementById('lista-inner');
+  const sorted = [...S.matches].sort((a, b) => matchDT(a) - matchDT(b));
+  const byDay = {};
+  sorted.forEach(m => { if (!byDay[m.dia]) byDay[m.dia] = []; byDay[m.dia].push(m); });
+  const days = Object.keys(byDay).sort((a, b) => {
+    const p = d => { const [dd, mm] = d.split('/'); return +mm * 100 + +dd; };
+    return p(a) - p(b);
+  });
+
+  let html = '';
+  for (const day of days) {
+    html += `<div class="day-header">📅 ${day}</div>`;
+    for (const m of byDay[day]) {
+      const p1v = typeof m.p1 === 'number' ? m.p1 : '';
+      const p2v = typeof m.p2 === 'number' ? m.p2 : '';
+      const scoreHTML = S.user.isAdmin
+        ? `<input class="lista-score-inp" type="number" min="0" max="99" value="${p1v}"
+               data-id="${m.id}" data-side="p1" placeholder="–">
+           <span class="score-sep">×</span>
+           <input class="lista-score-inp" type="number" min="0" max="99" value="${p2v}"
+               data-id="${m.id}" data-side="p2" placeholder="–">`
+        : `<span class="lista-score-disp${p1v === '' ? ' pending' : ''}">${p1v !== '' ? p1v : '–'}</span>
+           <span class="score-sep">×</span>
+           <span class="lista-score-disp${p2v === '' ? ' pending' : ''}">${p2v !== '' ? p2v : '–'}</span>`;
+      html += `
+        <div class="lista-row">
+          <div class="lista-info">
+            <span class="lista-grupo">${m.grupo || ''} · ${getRodada(m.filename)}</span>
+            <span class="lista-hora">⏰ ${m.hora}</span>
+          </div>
+          <span class="lista-team right">${m.sel1}</span>
+          <div class="lista-center">${scoreHTML}</div>
+          <span class="lista-team">${m.sel2}</span>
+          <div class="lista-badge"><span class="badge badge-none" data-badge="${m.id}"></span></div>
+        </div>`;
+    }
+  }
+  if (S.user.isAdmin) html += `<button class="btn-save-res" onclick="saveCSV()" style="margin-top:.5rem">💾 Salvar Resultados</button>`;
+
+  el.innerHTML = html;
+  S.matches.forEach(m => refreshBadge(m));
+  if (S.user.isAdmin) {
+    el.querySelectorAll('.lista-score-inp').forEach(inp => {
+      inp.addEventListener('input', () => {
+        const match = S.matches.find(x => x.id === +inp.dataset.id);
+        if (!match) return;
+        const val = inp.value.trim();
+        match[inp.dataset.side] = val === '' ? '' : Math.max(0, +val || 0);
+        refreshBadge(match);
+      });
+    });
+  }
+}
+
 /* ── Toast ────────────────────────────────────────── */
 let toastTimer;
 function toast(msg, type) {
@@ -779,7 +887,7 @@ function toast(msg, type) {
 document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key === 's') {
     e.preventDefault();
-    if (S.user?.isAdmin && S.activeTab === 'grupos') saveCSV();
+    if (S.user?.isAdmin && (S.activeTab === 'grupos' || S.activeTab === 'lista')) saveCSV();
     else if (S.activeTab === 'bolao') savePalpites();
   }
 });

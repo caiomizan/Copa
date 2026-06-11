@@ -11,10 +11,22 @@ const app  = express();
 const PORT = process.env.PORT || 3026;
 const DEV  = process.env.NODE_ENV !== 'production';
 if (!DEV) app.set('trust proxy', 1); // Render/Heroku: proxy HTTPS→HTTP
-const DATA = path.join(__dirname, 'dados');
-const CSV  = path.join(DATA, 'Copa 2026 - Rodada 01.csv');
+const DATA     = path.join(__dirname, 'dados');
 const USERS    = path.join(DATA, 'users.json');
 const PALPITES = path.join(DATA, 'palpites.json');
+
+function getCSVFiles() {
+  try { return fs.readdirSync(DATA).filter(f => /\.csv$/i.test(f)).sort(); }
+  catch { return []; }
+}
+function getAllMatchLines() {
+  return getCSVFiles().flatMap(f => {
+    try {
+      return fs.readFileSync(path.join(DATA, f), 'utf8')
+        .split(/\r?\n/).filter(l => l.trim()).slice(1);
+    } catch { return []; }
+  });
+}
 const ADMIN_UN = (process.env.ADMIN_USERNAME || 'admin').toLowerCase();
 
 const load = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
@@ -39,8 +51,7 @@ function bootstrapAdmin() {
 bootstrapAdmin();
 
 // ── Middleware ───────────────────────────────────────────────────
-app.use(express.json());
-app.use(express.text({ type: 'text/plain', limit: '2mb' }));
+app.use(express.json({ limit: '2mb' }));
 app.use(session({
   secret: process.env.SESSION_SECRET || 'copa2026dev_changeme',
   resave: false,
@@ -122,13 +133,18 @@ app.delete('/api/users/:username', needAuth, needAdmin, (req, res) => {
 
 // ── CSV ──────────────────────────────────────────────────────────
 app.get('/api/csv', needAuth, (req, res) => {
-  try { res.type('text/plain').send(fs.readFileSync(CSV, 'utf8')); }
-  catch { res.status(404).send(''); }
+  res.json(getCSVFiles().map(f => {
+    try { return { filename: f, text: fs.readFileSync(path.join(DATA, f), 'utf8') }; }
+    catch { return { filename: f, text: '' }; }
+  }));
 });
 
 app.post('/api/csv', needAuth, needAdmin, (req, res) => {
+  const { filename, text } = req.body || {};
+  if (!filename || !/\.csv$/i.test(filename))
+    return res.status(400).json({ error: 'Arquivo inválido' });
   try {
-    fs.writeFileSync(CSV, typeof req.body === 'string' ? req.body : '', 'utf8');
+    fs.writeFileSync(path.join(DATA, path.basename(filename)), text || '', 'utf8');
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -147,11 +163,10 @@ app.post('/api/palpites', needAuth, (req, res) => {
   const all  = load(PALPITES, {});
   const existing = all[req.session.user.username] || {};
 
-  // Parse match lock times from CSV
+  // Parse match lock times from all CSV files (global sequential IDs)
   const locks = {};
   try {
-    const lines = fs.readFileSync(CSV, 'utf8').split(/\r?\n/).filter(l => l.trim()).slice(1);
-    lines.forEach((line, i) => {
+    getAllMatchLines().forEach((line, i) => {
       const cols = line.split(',');
       const [d, mo] = (cols[6] || '').split('/').map(Number);
       const [h, mi] = (cols[7] || '').split(':').map(Number);
@@ -182,10 +197,7 @@ app.post('/api/palpites', needAuth, (req, res) => {
 // ── Bolão leaderboard ────────────────────────────────────────────
 app.get('/api/bolao', needAuth, (req, res) => {
   const allPals = load(PALPITES, {});
-  let csvText = '';
-  try { csvText = fs.readFileSync(CSV, 'utf8'); } catch { return res.json([]); }
-
-  const lines = csvText.split(/\r?\n/).filter(l => l.trim()).slice(1);
+  const lines = getAllMatchLines();
   const results = {};
   lines.forEach((line, i) => {
     const cols = line.split(',');
