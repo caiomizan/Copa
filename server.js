@@ -84,6 +84,20 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/auth/logout', (req, res) => req.session.destroy(() => res.json({ ok: true })));
 
+app.post('/api/auth/change-password', needAuth, async (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  if (!newPassword || newPassword.length < 4)
+    return res.status(400).json({ error: 'Nova senha deve ter no mínimo 4 caracteres' });
+  const users = load(USERS, []);
+  const u = users.find(x => x.username === req.session.user.username);
+  if (!u) return res.status(404).json({ error: 'Usuário não encontrado' });
+  if (!await bcrypt.compare(currentPassword || '', u.passwordHash))
+    return res.status(401).json({ error: 'Senha atual incorreta' });
+  u.passwordHash = await bcrypt.hash(newPassword, 10);
+  dump(USERS, users);
+  res.json({ ok: true });
+});
+
 // ── Users (admin creates accounts) ──────────────────────────────
 app.get('/api/users', needAuth, needAdmin, (req, res) => {
   res.json(load(USERS, []).map(({ username, isAdmin }) => ({ username, isAdmin })));
@@ -113,6 +127,18 @@ app.post('/api/users', async (req, res) => {
     return res.json({ username: name, isAdmin });
   }
   res.json({ username: name, isAdmin });
+});
+
+app.post('/api/users/:username/reset-password', needAuth, needAdmin, async (req, res) => {
+  const { newPassword } = req.body || {};
+  if (!newPassword || newPassword.length < 4)
+    return res.status(400).json({ error: 'Nova senha deve ter no mínimo 4 caracteres' });
+  const users = load(USERS, []);
+  const u = users.find(x => x.username === req.params.username);
+  if (!u) return res.status(404).json({ error: 'Usuário não encontrado' });
+  u.passwordHash = await bcrypt.hash(newPassword, 10);
+  dump(USERS, users);
+  res.json({ ok: true });
 });
 
 app.delete('/api/users/:username', needAuth, needAdmin, (req, res) => {

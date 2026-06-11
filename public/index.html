@@ -309,6 +309,7 @@
       <button id="h-users-btn"  class="btn-ghost" onclick="openUserModal()" hidden>👥 Usuários</button>
       <button id="h-save-btn"   class="btn-ghost" onclick="saveCSV()" hidden>💾 Salvar</button>
       <button id="h-backup-btn" class="btn-ghost" onclick="window.location='/api/admin/backup'" hidden>⬇ Backup</button>
+      <button class="btn-ghost" onclick="openPassModal()">🔑 Senha</button>
       <button class="btn-ghost" onclick="doLogout()">Sair</button>
     </div>
   </header>
@@ -356,6 +357,41 @@
       <input id="cu-pass" type="password" placeholder="Senha provisória (mín. 4)" required minlength="4">
       <div id="cu-err" class="form-err" hidden></div>
       <button type="submit" class="btn-primary" style="margin-top:.25rem">Criar conta</button>
+    </form>
+  </div>
+</div>
+
+<!-- ── Modal: trocar senha ───────────────────────── -->
+<div id="pass-modal" class="modal-wrap" hidden>
+  <div class="modal-overlay" onclick="closePassModal()"></div>
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Trocar Senha</h3>
+      <button class="modal-close" onclick="closePassModal()">✕</button>
+    </div>
+    <form onsubmit="changePassword(event)">
+      <input id="cp-current" type="password" placeholder="Senha atual" required>
+      <input id="cp-new"     type="password" placeholder="Nova senha (mín. 4 caracteres)" required minlength="4">
+      <input id="cp-confirm" type="password" placeholder="Confirmar nova senha" required minlength="4">
+      <div id="cp-err" class="form-err" hidden></div>
+      <button type="submit" class="btn-primary" style="margin-top:.25rem">Salvar nova senha</button>
+    </form>
+  </div>
+</div>
+
+<!-- ── Modal: redefinir senha (admin) ───────────── -->
+<div id="reset-modal" class="modal-wrap" hidden>
+  <div class="modal-overlay" onclick="closeResetModal()"></div>
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Redefinir Senha — <span id="reset-username"></span></h3>
+      <button class="modal-close" onclick="closeResetModal()">✕</button>
+    </div>
+    <form onsubmit="resetPassword(event)">
+      <input id="rp-new"     type="password" placeholder="Nova senha (mín. 4 caracteres)" required minlength="4">
+      <input id="rp-confirm" type="password" placeholder="Confirmar nova senha" required minlength="4">
+      <div id="rp-err" class="form-err" hidden></div>
+      <button type="submit" class="btn-primary" style="margin-top:.25rem">Redefinir senha</button>
     </form>
   </div>
 </div>
@@ -789,7 +825,11 @@ async function refreshUserList() {
   document.getElementById('user-list').innerHTML = users.map(u => `
     <div class="user-item">
       <div>${u.username}${u.isAdmin ? '<span class="admin-badge" style="margin-left:.4rem">admin</span>' : ''}</div>
-      ${!u.isAdmin ? `<button class="btn-danger" onclick="deleteUser('${u.username}')">Remover</button>` : ''}
+      <div style="display:flex;gap:.4rem">
+        <button class="btn-ghost" style="font-size:.75rem;padding:.25rem .6rem"
+          onclick="openResetModal('${u.username}')">🔑</button>
+        ${!u.isAdmin ? `<button class="btn-danger" onclick="deleteUser('${u.username}')">Remover</button>` : ''}
+      </div>
     </div>`).join('');
 }
 
@@ -819,6 +859,54 @@ async function deleteUser(username) {
     await refreshUserList();
     toast(`"${username}" removido.`, 'ok');
   } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ── Trocar senha (próprio usuário) ──────────────── */
+function openPassModal() {
+  ['cp-current','cp-new','cp-confirm'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('cp-err').hidden = true;
+  document.getElementById('pass-modal').hidden = false;
+}
+function closePassModal() { document.getElementById('pass-modal').hidden = true; }
+
+async function changePassword(e) {
+  e.preventDefault();
+  const cur  = document.getElementById('cp-current').value;
+  const nw   = document.getElementById('cp-new').value;
+  const conf = document.getElementById('cp-confirm').value;
+  const err  = document.getElementById('cp-err');
+  err.hidden = true;
+  if (nw !== conf) { err.textContent = 'As senhas não coincidem.'; err.hidden = false; return; }
+  try {
+    await api('POST', '/api/auth/change-password', { currentPassword: cur, newPassword: nw });
+    closePassModal();
+    toast('Senha alterada com sucesso! ✓', 'ok');
+  } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+}
+
+/* ── Redefinir senha (admin) ──────────────────────── */
+let _resetTarget = '';
+function openResetModal(username) {
+  _resetTarget = username;
+  document.getElementById('reset-username').textContent = username;
+  ['rp-new','rp-confirm'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('rp-err').hidden = true;
+  document.getElementById('reset-modal').hidden = false;
+}
+function closeResetModal() { document.getElementById('reset-modal').hidden = true; }
+
+async function resetPassword(e) {
+  e.preventDefault();
+  const nw   = document.getElementById('rp-new').value;
+  const conf = document.getElementById('rp-confirm').value;
+  const err  = document.getElementById('rp-err');
+  err.hidden = true;
+  if (nw !== conf) { err.textContent = 'As senhas não coincidem.'; err.hidden = false; return; }
+  try {
+    await api('POST', `/api/users/${_resetTarget}/reset-password`, { newPassword: nw });
+    closeResetModal();
+    toast(`Senha de "${_resetTarget}" redefinida. ✓`, 'ok');
+  } catch (ex) { err.textContent = ex.message; err.hidden = false; }
 }
 
 /* ── Lista de Jogos ───────────────────────────────── */
