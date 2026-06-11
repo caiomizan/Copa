@@ -3,7 +3,7 @@ services:
     name: copa-2026-bolao
     env: node
     plan: free
-    buildCommand: npm install
+    buildCommand: npm ci
     startCommand: node server.js
     envVars:
       - key: NODE_ENV
