@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Copa 2026 — Bolão</title>
+  <style>
+    :root {
+      --bg: #0b1623; --card: #131f33; --border: #1e3050;
+      --accent: #c9a227; --text: #e8eef4; --muted: #7a8fa8;
+      --win: #2ecc71; --draw: #f39c12; --lose: #e74c3c;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    input[type=number] { -moz-appearance: textfield; }
+    input[type=number]::-webkit-outer-spin-button,
+    input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+    /* ── Auth ── */
+    .auth-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+    .auth-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+      padding: 2.5rem 2rem; width: 100%; max-width: 380px;
+    }
+    .auth-logo { font-size: 2rem; font-weight: 800; color: var(--accent); text-align: center; }
+    .auth-sub  { text-align: center; color: var(--muted); font-size: 0.9rem; margin-bottom: 2rem; }
+    .auth-card input {
+      display: block; width: 100%; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 7px; padding: 0.65rem 0.9rem; color: var(--text); font-size: 0.95rem;
+      margin-bottom: 0.75rem; transition: border-color 0.2s;
+    }
+    .auth-card input:focus { outline: none; border-color: var(--accent); }
+    .auth-err { background: rgba(231,76,60,.15); border: 1px solid var(--lose); border-radius: 6px;
+      color: var(--lose); padding: 0.5rem 0.75rem; font-size: 0.85rem; margin-bottom: 0.75rem; }
+    .auth-note { font-size: 0.82rem; color: var(--muted); margin-top: 1rem; text-align: center; }
+
+    /* ── Buttons ── */
+    button { cursor: pointer; border: none; border-radius: 6px; font-weight: 600; transition: opacity .2s, background .2s; }
+    .btn-primary { width: 100%; background: var(--accent); color: #000; padding: 0.7rem; font-size: 0.95rem; margin-top: 0.25rem; }
+    .btn-primary:hover { opacity: .85; }
+    .btn-ghost { background: var(--card); color: var(--muted); border: 1px solid var(--border);
+      padding: 0.45rem 0.9rem; font-size: 0.8rem; }
+    .btn-ghost:hover { color: var(--text); border-color: var(--muted); }
+    .btn-danger { background: rgba(231,76,60,.15); color: var(--lose); border: 1px solid rgba(231,76,60,.3);
+      padding: 0.3rem 0.7rem; font-size: 0.8rem; }
+    .btn-danger:hover { background: rgba(231,76,60,.25); }
+
+    /* ── Header ── */
+    header {
+      background: linear-gradient(135deg, #0b1623, #122a1e);
+      border-bottom: 2px solid var(--accent);
+      padding: 0.9rem 1.5rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    }
+    .logo { font-size: 1.4rem; font-weight: 800; color: var(--accent); }
+    .logo span { color: var(--text); font-weight: 400; font-size: 0.9rem; }
+    .logo small { color: var(--muted); font-size: 0.75rem; margin-left: 0.3rem; font-weight: 400; }
+    .h-right { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+    #h-user { font-size: 0.85rem; color: var(--muted); }
+
+    /* ── Tabs ── */
+    .tabs { background: var(--card); border-bottom: 1px solid var(--border); padding: 0 1.5rem; }
+    .tab-btn {
+      display: inline-block; padding: 0.85rem 1.4rem; background: none;
+      color: var(--muted); font-size: 0.875rem; font-weight: 700;
+      border-bottom: 3px solid transparent; border-radius: 0;
+      transition: color .2s, border-color .2s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* ── Group pills ── */
+    .group-pills {
+      display: flex; flex-wrap: wrap; gap: 0.5rem;
+      padding: 1.25rem 1.5rem; background: var(--card); border-bottom: 1px solid var(--border);
+    }
+    .pill {
+      padding: 0.35rem 0.9rem; border-radius: 20px;
+      border: 1px solid var(--border); background: transparent;
+      color: var(--muted); font-size: 0.8rem; font-weight: 700; transition: all .15s;
+    }
+    .pill:hover { color: var(--text); border-color: var(--muted); }
+    .pill.active { background: var(--accent); color: #000; border-color: var(--accent); }
+
+    /* ── Inner content ── */
+    .inner { padding: 1.5rem; max-width: 860px; margin: 0 auto; }
+    .sec-title {
+      font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .12em; color: var(--accent);
+      margin-bottom: .85rem; padding-bottom: .4rem; border-bottom: 1px solid var(--border);
+    }
+
+    /* ── Standings ── */
+    .standings-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+      margin-bottom: 1.5rem; overflow: hidden; }
+    .standings-tbl { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    .standings-tbl th {
+      background: #0d1829; color: var(--muted); font-size: 0.67rem;
+      text-transform: uppercase; letter-spacing: .08em;
+      padding: .55rem .75rem; text-align: center; border-bottom: 1px solid var(--border);
+    }
+    .standings-tbl th:nth-child(2) { text-align: left; }
+    .standings-tbl td { padding: .55rem .75rem; border-bottom: 1px solid var(--border); text-align: center; }
+    .standings-tbl td:nth-child(2) { text-align: left; font-weight: 600; }
+    .standings-tbl tr:last-child td { border-bottom: none; }
+    .standings-tbl tr.qualif td:first-child { box-shadow: inset 3px 0 0 var(--win); }
+    .standings-tbl .bold { font-weight: 800; color: var(--text); }
+    .standings-tbl .pos { color: var(--win); font-weight: 600; }
+    .standings-tbl .neg { color: var(--lose); font-weight: 600; }
+
+    /* ── Match card ── */
+    .match-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+      margin-bottom: .75rem; padding: .9rem 1.25rem;
+      display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: .75rem;
+      transition: border-color .2s;
+    }
+    .match-card:hover { border-color: #2e4a70; }
+    .team-box { display: flex; align-items: center; }
+    .team-box.right { justify-content: flex-end; }
+    .tname { font-weight: 600; font-size: .9rem; }
+    .score-center { display: flex; flex-direction: column; align-items: center; gap: .3rem; }
+    .score-row { display: flex; align-items: center; gap: .4rem; }
+    .score-input {
+      width: 52px; height: 52px; background: #09131f;
+      border: 2px solid var(--border); border-radius: 8px;
+      color: var(--text); font-size: 1.4rem; font-weight: 800; text-align: center;
+      transition: border-color .2s;
+    }
+    .score-input:focus { outline: none; border-color: var(--accent); }
+    .score-display {
+      width: 52px; height: 52px; display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem; font-weight: 800; color: var(--text);
+      background: #09131f; border-radius: 8px; border: 2px solid var(--border);
+    }
+    .score-display.pending { color: var(--muted); font-size: 1rem; }
+    .score-sep { font-size: 1.1rem; color: var(--muted); font-weight: 700; }
+    .match-meta { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; justify-content: center; }
+    .dt { font-size: .7rem; color: var(--muted); }
+    .badge { font-size: .65rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .06em; padding: .15rem .45rem; border-radius: 10px; }
+    .badge-win  { background: rgba(46,204,113,.15); color: var(--win); }
+    .badge-draw { background: rgba(243,156,18,.15);  color: var(--draw); }
+    .badge-none { display: none; }
+    .saldo-val  { font-size: .7rem; color: var(--muted); }
+    .btn-save-res {
+      display: block; width: 100%; margin-top: .5rem;
+      background: var(--accent); color: #000; padding: .65rem; font-size: .875rem; border-radius: 8px;
+    }
+    .btn-save-res:hover { opacity: .85; }
+
+    /* ── Leaderboard ── */
+    .lb-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+      margin-bottom: 1.5rem; overflow: hidden; }
+    .lb-tbl { width: 100%; border-collapse: collapse; font-size: .875rem; }
+    .lb-tbl th {
+      background: #0d1829; color: var(--muted); font-size: .67rem;
+      text-transform: uppercase; letter-spacing: .08em;
+      padding: .55rem .75rem; border-bottom: 1px solid var(--border);
+    }
+    .lb-tbl th:nth-child(2) { text-align: left; }
+    .lb-tbl td { padding: .6rem .75rem; border-bottom: 1px solid var(--border); text-align: center; }
+    .lb-tbl td:nth-child(2) { text-align: left; }
+    .lb-tbl tr:last-child td { border-bottom: none; }
+    .lb-tbl tr.me td { background: rgba(201,162,39,.06); }
+    .lb-tbl .bold { font-weight: 800; font-size: 1rem; }
+    .you-badge { font-size: .65rem; background: rgba(201,162,39,.2); color: var(--accent);
+      padding: .1rem .4rem; border-radius: 8px; margin-left: .35rem; font-weight: 700; }
+    .empty { color: var(--muted); font-size: .875rem; padding: 1.5rem; text-align: center; }
+
+    /* ── Palpites ── */
+    .pal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+    .btn-save-pal { background: var(--accent); color: #000; padding: .5rem 1.1rem; font-size: .85rem; border-radius: 6px; }
+    .btn-save-pal:hover { opacity: .85; }
+    .day-header { font-size: .72rem; font-weight: 700; color: var(--muted); text-transform: uppercase;
+      letter-spacing: .1em; padding: .4rem 0 .5rem; margin-top: .75rem; border-bottom: 1px solid var(--border);
+      margin-bottom: .5rem; }
+    .pal-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+      margin-bottom: .5rem; padding: .7rem 1rem;
+      display: grid; grid-template-columns: 1fr auto 1fr auto; align-items: center; gap: .6rem;
+    }
+    .pal-card.locked { opacity: .75; }
+    .pal-team { font-weight: 600; font-size: .875rem; }
+    .pal-team.right { text-align: right; }
+    .pal-score-row { display: flex; align-items: center; gap: .3rem; }
+    .pal-input {
+      width: 40px; height: 38px; background: #09131f;
+      border: 2px solid var(--border); border-radius: 6px;
+      color: var(--text); font-size: 1.05rem; font-weight: 800; text-align: center;
+      transition: border-color .2s;
+    }
+    .pal-input:focus { outline: none; border-color: var(--accent); }
+    .pal-input:disabled { opacity: .5; cursor: not-allowed; }
+    .pal-sep { color: var(--muted); font-weight: 700; font-size: .9rem; }
+    .pal-meta { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; font-size: .72rem; color: var(--muted); }
+    .pts-badge { font-size: .7rem; font-weight: 700; padding: .15rem .4rem; border-radius: 8px; }
+    .pts-3 { background: rgba(46,204,113,.2); color: var(--win); }
+    .pts-1 { background: rgba(243,156,18,.2); color: var(--draw); }
+    .pts-0 { background: rgba(255,255,255,.06); color: var(--muted); }
+    .actual { color: var(--text); font-weight: 700; }
+
+    /* ── User modal ── */
+    .modal-wrap { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+    .modal-overlay { position: absolute; inset: 0; background: rgba(0,0,0,.6); }
+    .modal-box {
+      position: relative; background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1.5rem; width: 100%; max-width: 420px; z-index: 1;
+    }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; }
+    .modal-header h3 { font-size: 1rem; color: var(--text); }
+    .modal-close { background: none; color: var(--muted); font-size: 1rem; padding: .25rem .5rem; }
+    .modal-close:hover { color: var(--text); }
+    .modal-divider { border-color: var(--border); margin: 1rem 0; }
+    .modal-label { font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+      color: var(--muted); margin-bottom: .65rem; }
+    .modal-box input {
+      display: block; width: 100%; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 7px; padding: .6rem .85rem; color: var(--text); font-size: .9rem;
+      margin-bottom: .6rem; transition: border-color .2s;
+    }
+    .modal-box input:focus { outline: none; border-color: var(--accent); }
+    .form-err { color: var(--lose); font-size: .82rem; margin-bottom: .5rem; }
+    .user-list { display: flex; flex-direction: column; gap: .4rem; max-height: 180px; overflow-y: auto; }
+    .user-item { display: flex; align-items: center; justify-content: space-between;
+      background: var(--bg); border-radius: 6px; padding: .4rem .7rem; font-size: .875rem; }
+    .admin-badge { font-size: .65rem; background: rgba(201,162,39,.2); color: var(--accent);
+      padding: .1rem .4rem; border-radius: 8px; font-weight: 700; }
+
+    /* ── Toast ── */
+    #toast { position: fixed; bottom: 1.5rem; right: 1.5rem;
+      padding: .6rem 1.1rem; border-radius: 8px; font-weight: 600; font-size: .85rem;
+      opacity: 0; transform: translateY(8px); transition: opacity .3s, transform .3s; pointer-events: none; }
+    #toast.ok  { background: #1a472a; color: var(--win); }
+    #toast.err { background: #471a1a; color: var(--lose); }
+    #toast.show { opacity: 1; transform: translateY(0); }
+
+    .spinner { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin .7s linear infinite; margin: 4rem auto; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<!-- ── Auth ─────────────────────────────────────────────────── -->
+<div id="v-auth">
+  <div class="auth-wrap">
+    <div class="auth-card">
+      <div class="auth-logo">⚽ Copa 2026</div>
+      <div class="auth-sub">Bolão</div>
+      <div id="auth-err" class="auth-err" hidden></div>
+
+      <form id="f-login" onsubmit="doLogin(event)">
+        <input name="username" placeholder="Usuário" autocomplete="username" required>
+        <input name="password" type="password" placeholder="Senha" autocomplete="current-password" required>
+        <button type="submit" class="btn-primary">Entrar</button>
+        <p class="auth-note" id="no-users-note" hidden>
+          Nenhum jogador cadastrado ainda. <a href="#" onclick="showRegisterView(); return false">Criar conta de administrador →</a>
+        </p>
+      </form>
+
+      <form id="f-register" onsubmit="doFirstRegister(event)" hidden>
+        <input name="username" placeholder="Usuário (será o administrador)" required minlength="2">
+        <input name="password" type="password" placeholder="Senha (mín. 4 caracteres)" required minlength="4">
+        <button type="submit" class="btn-primary">Criar conta de administrador</button>
+        <p class="auth-note"><a href="#" onclick="showLoginView(); return false">← Voltar ao login</a></p>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ── App ──────────────────────────────────────────────────── -->
+<div id="v-app" hidden>
+  <header>
+    <div class="logo">⚽ <span>Copa 2026</span><small>Bolão</small></div>
+    <div class="h-right">
+      <span id="h-user"></span>
+      <button id="h-users-btn" class="btn-ghost" onclick="openUserModal()" hidden>👥 Usuários</button>
+      <button id="h-save-btn" class="btn-ghost" onclick="saveCSV()" hidden>💾 Salvar</button>
+      <button class="btn-ghost" onclick="doLogout()">Sair</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="grupos" onclick="setTab('grupos')">Grupos</button>
+    <button class="tab-btn"        data-tab="bolao"  onclick="setTab('bolao')">Bolão</button>
+  </nav>
+
+  <section id="s-grupos">
+    <div class="group-pills" id="group-pills"></div>
+    <div class="inner" id="s-inner">
+      <div class="spinner"></div>
+    </div>
+  </section>
+
+  <section id="s-bolao" hidden>
+    <div class="inner">
+      <div id="b-leaderboard"></div>
+      <div id="b-palpites"></div>
+    </div>
+  </section>
+</div>
+
+<!-- ── User modal ───────────────────────────────────────────── -->
+<div id="user-modal" class="modal-wrap" hidden>
+  <div class="modal-overlay" onclick="closeUserModal()"></div>
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Gerenciar Jogadores</h3>
+      <button class="modal-close" onclick="closeUserModal()">✕</button>
+    </div>
+    <div id="user-list"></div>
+    <hr class="modal-divider">
+    <p class="modal-label">Adicionar jogador</p>
+    <form onsubmit="createUser(event)">
+      <input id="cu-user" placeholder="Usuário" required minlength="2">
+      <input id="cu-pass" type="password" placeholder="Senha provisória (mín. 4)" required minlength="4">
+      <div id="cu-err" class="form-err" hidden></div>
+      <button type="submit" class="btn-primary" style="margin-top:.25rem">Criar conta</button>
+    </form>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ── State ────────────────────────────────────────── */
+const S = {
+  user: null, matches: [], csvHeader: '',
+  myPals: {}, pending: {}, bolao: [],
+  activeGroup: null, activeTab: 'grupos',
+};
+
+/* ── API ──────────────────────────────────────────── */
+async function api(method, url, body) {
+  const isText = typeof body === 'string';
+  const r = await fetch(url, {
+    method,
+    headers: body != null ? { 'Content-Type': isText ? 'text/plain' : 'application/json' } : {},
+    body: body != null ? (isText ? body : JSON.stringify(body)) : undefined,
+  });
+  if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || 'Erro ' + r.status); }
+  const ct = r.headers.get('content-type') || '';
+  return ct.includes('json') ? r.json() : r.text();
+}
+
+/* ── Boot ─────────────────────────────────────────── */
+async function init() {
+  try {
+    S.user = await api('GET', '/api/auth/me');
+    await loadAll();
+    showApp();
+  } catch {
+    const { hasUsers } = await api('GET', '/api/auth/status').catch(() => ({ hasUsers: true }));
+    if (!hasUsers) document.getElementById('no-users-note').hidden = false;
+    document.getElementById('v-auth').hidden = false;
+  }
+}
+
+async function loadAll() {
+  const [csvText, myPals, bolao] = await Promise.all([
+    api('GET', '/api/csv'),
+    api('GET', '/api/palpites/me'),
+    api('GET', '/api/bolao'),
+  ]);
+  parseCSV(csvText);
+  S.myPals  = myPals  || {};
+  S.pending = JSON.parse(JSON.stringify(S.myPals));
+  S.bolao   = bolao   || [];
+}
+
+/* ── Auth ─────────────────────────────────────────── */
+function showLoginView() {
+  document.getElementById('f-login').hidden    = false;
+  document.getElementById('f-register').hidden = true;
+  document.getElementById('auth-err').hidden   = true;
+}
+function showRegisterView() {
+  document.getElementById('f-login').hidden    = true;
+  document.getElementById('f-register').hidden = false;
+  document.getElementById('auth-err').hidden   = true;
+}
+function setAuthErr(msg) {
+  const el = document.getElementById('auth-err');
+  el.textContent = msg; el.hidden = false;
+}
+
+async function doLogin(e) {
+  e.preventDefault();
+  const f = e.target;
+  try {
+    S.user = await api('POST', '/api/auth/login', { username: f.username.value.trim(), password: f.password.value });
+    await loadAll(); showApp();
+  } catch (err) { setAuthErr(err.message); }
+}
+
+async function doFirstRegister(e) {
+  e.preventDefault();
+  const f = e.target;
+  try {
+    S.user = await api('POST', '/api/users', { username: f.username.value.trim(), password: f.password.value });
+    await loadAll(); showApp();
+  } catch (err) { setAuthErr(err.message); }
+}
+
+async function doLogout() {
+  await api('POST', '/api/auth/logout').catch(() => {});
+  S.user = null; S.matches = []; S.myPals = {};
+  document.getElementById('v-app').hidden  = true;
+  document.getElementById('v-auth').hidden = false;
+  showLoginView();
+}
+
+/* ── CSV ──────────────────────────────────────────── */
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  S.csvHeader = lines[0] || '';
+  S.matches = lines.slice(1).map((line, i) => {
+    const c = line.split(',');
+    let p1 = (c[1] || '').trim(), p2 = (c[2] || '').trim();
+    if (/^\d+x\d+$/i.test(p1)) { [p1, p2] = p1.split(/x/i); }
+    return { id: i, sel1: c[0]?.trim(), p1: p1 === '' ? '' : +p1, p2: p2 === '' ? '' : +p2,
+             sel2: c[3]?.trim(), dia: c[6]?.trim(), hora: c[7]?.trim(), grupo: c[8]?.trim() };
+  });
+  const groups = [...new Set(S.matches.map(m => m.grupo).filter(Boolean))];
+  if (!S.activeGroup || !groups.includes(S.activeGroup)) S.activeGroup = groups[0] || null;
+}
+
+function generateCSV() {
+  const hdr = S.csvHeader || 'Seleção 1,Placar 1,Placar 2,Seleção 2,Vencedor,Saldo de Gols,Dia,Hora,Grupo';
+  return [hdr, ...S.matches.map(m => {
+    const p1 = typeof m.p1 === 'number' ? m.p1 : '';
+    const p2 = typeof m.p2 === 'number' ? m.p2 : '';
+    const venc  = p1 !== '' && p2 !== '' ? (+p1 > +p2 ? m.sel1 : +p2 > +p1 ? m.sel2 : 'Empate') : '';
+    const saldo = p1 !== '' && p2 !== '' ? String(+p1 - +p2) : '';
+    return [m.sel1, p1, p2, m.sel2, venc, saldo, m.dia, m.hora, m.grupo].join(',');
+  })].join('\r\n');
+}
+
+async function saveCSV() {
+  try {
+    await fetch('/api/csv', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: generateCSV() })
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); });
+    S.bolao = await api('GET', '/api/bolao');
+    if (S.activeTab === 'bolao') renderLeaderboard();
+    toast('Resultados salvos! ✓', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ── Views ────────────────────────────────────────── */
+function showApp() {
+  document.getElementById('v-auth').hidden = true;
+  document.getElementById('v-app').hidden  = false;
+  document.getElementById('h-user').textContent = '👤 ' + S.user.username;
+  document.getElementById('h-users-btn').hidden = !S.user.isAdmin;
+  document.getElementById('h-save-btn').hidden  = !S.user.isAdmin;
+  setTab('grupos');
+}
+
+let lockTimer = null;
+function setTab(tab) {
+  S.activeTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.getElementById('s-grupos').hidden = tab !== 'grupos';
+  document.getElementById('s-bolao').hidden  = tab !== 'bolao';
+  clearInterval(lockTimer);
+  if (tab === 'grupos') renderGrupos();
+  if (tab === 'bolao')  {
+    renderBolao();
+    lockTimer = setInterval(renderMyPalpites, 30000); // refresh lock states
+  }
+}
+
+/* ── Grupos ───────────────────────────────────────── */
+function renderGrupos() {
+  // Pills
+  const groups = [...new Set(S.matches.map(m => m.grupo).filter(Boolean))];
+  const pills = document.getElementById('group-pills');
+  pills.innerHTML = '';
+  groups.forEach(g => {
+    const b = document.createElement('button');
+    b.className = 'pill' + (g === S.activeGroup ? ' active' : '');
+    b.textContent = g; b.onclick = () => { S.activeGroup = g; renderGrupos(); };
+    pills.appendChild(b);
+  });
+
+  // Inner content
+  const inner = document.getElementById('s-inner');
+  const rows = calcStandings(S.activeGroup);
+  const gMatches = S.matches.filter(m => m.grupo === S.activeGroup);
+
+  inner.innerHTML = '';
+
+  // Standings
+  const sw = document.createElement('div');
+  sw.className = 'standings-wrap';
+  sw.innerHTML = `
+    <div style="padding:.75rem 1rem .4rem; font-size:.68rem; font-weight:700; text-transform:uppercase;
+         letter-spacing:.12em; color:var(--accent)">Classificação — Grupo ${S.activeGroup}</div>
+    <table class="standings-tbl">
+      <thead><tr>
+        <th>#</th><th>Time</th><th>Pts</th><th>J</th><th>V</th><th>E</th>
+        <th>D</th><th>GP</th><th>GC</th><th>SG</th>
+      </tr></thead>
+      <tbody>${rows.map((t, i) => `
+        <tr class="${i < 2 ? 'qualif' : ''}">
+          <td>${i + 1}</td><td>${t.name}</td>
+          <td class="bold">${t.P}</td><td>${t.J}</td><td>${t.V}</td>
+          <td>${t.E}</td><td>${t.D}</td><td>${t.GP}</td><td>${t.GC}</td>
+          <td class="${t.SG > 0 ? 'pos' : t.SG < 0 ? 'neg' : ''}">${t.SG > 0 ? '+' + t.SG : t.SG}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+  inner.appendChild(sw);
+
+  // Matches title
+  const mt = document.createElement('div');
+  mt.className = 'sec-title'; mt.style.marginTop = '1.5rem';
+  mt.textContent = 'Jogos — Rodada 01';
+  inner.appendChild(mt);
+
+  gMatches.forEach(m => inner.appendChild(buildMatchCard(m)));
+
+  if (S.user.isAdmin) {
+    const btn = document.createElement('button');
+    btn.className = 'btn-save-res'; btn.textContent = '💾 Salvar Resultados'; btn.onclick = saveCSV;
+    inner.appendChild(btn);
+  }
+}
+
+function calcStandings(group) {
+  const T = {};
+  S.matches.filter(m => m.grupo === group).forEach(m => {
+    [m.sel1, m.sel2].forEach(n => { if (!T[n]) T[n] = { name: n, P: 0, J: 0, V: 0, E: 0, D: 0, GP: 0, GC: 0 }; });
+  });
+  S.matches.filter(m => m.grupo === group && typeof m.p1 === 'number' && typeof m.p2 === 'number').forEach(m => {
+    const [t1, t2] = [T[m.sel1], T[m.sel2]];
+    t1.J++; t2.J++; t1.GP += m.p1; t1.GC += m.p2; t2.GP += m.p2; t2.GC += m.p1;
+    if (m.p1 > m.p2)      { t1.V++; t1.P += 3; t2.D++; }
+    else if (m.p2 > m.p1) { t2.V++; t2.P += 3; t1.D++; }
+    else                  { t1.E++; t1.P++;     t2.E++; t2.P++; }
+  });
+  return Object.values(T).map(t => ({ ...t, SG: t.GP - t.GC }))
+    .sort((a, b) => b.P - a.P || b.SG - a.SG || b.GP - a.GP || a.name.localeCompare(b.name));
+}
+
+function buildMatchCard(m) {
+  const card = document.createElement('div');
+  card.className = 'match-card';
+  const p1v = typeof m.p1 === 'number' ? m.p1 : '';
+  const p2v = typeof m.p2 === 'number' ? m.p2 : '';
+  const scoreHTML = S.user.isAdmin
+    ? `<input class="score-input" type="number" min="0" max="99" value="${p1v}"
+             data-id="${m.id}" data-side="p1" placeholder="–">
+       <span class="score-sep">×</span>
+       <input class="score-input" type="number" min="0" max="99" value="${p2v}"
+             data-id="${m.id}" data-side="p2" placeholder="–">`
+    : `<span class="score-display${p1v === '' ? ' pending' : ''}">${p1v !== '' ? p1v : '–'}</span>
+       <span class="score-sep">×</span>
+       <span class="score-display${p2v === '' ? ' pending' : ''}">${p2v !== '' ? p2v : '–'}</span>`;
+
+  card.innerHTML = `
+    <div class="team-box right"><span class="tname">${m.sel1}</span></div>
+    <div class="score-center">
+      <div class="score-row">${scoreHTML}</div>
+      <div class="match-meta">
+        <span class="dt">📅 ${m.dia} ⏰ ${m.hora}</span>
+        <span class="badge badge-none" data-badge="${m.id}"></span>
+        <span class="saldo-val" data-saldo="${m.id}"></span>
+      </div>
+    </div>
+    <div class="team-box"><span class="tname">${m.sel2}</span></div>`;
+
+  refreshBadge(m);
+
+  if (S.user.isAdmin) {
+    card.querySelectorAll('.score-input').forEach(inp => {
+      inp.addEventListener('input', () => {
+        const match = S.matches.find(x => x.id === +inp.dataset.id);
+        const val = inp.value.trim();
+        match[inp.dataset.side] = val === '' ? '' : Math.max(0, +val || 0);
+        refreshBadge(match);
+      });
+    });
+  }
+  return card;
+}
+
+function refreshBadge(m) {
+  const p1 = typeof m.p1 === 'number' ? m.p1 : null;
+  const p2 = typeof m.p2 === 'number' ? m.p2 : null;
+  const venc  = p1 !== null && p2 !== null ? (p1 > p2 ? m.sel1 : p2 > p1 ? m.sel2 : 'Empate') : '';
+  const saldo = p1 !== null && p2 !== null ? p1 - p2 : null;
+  document.querySelectorAll(`[data-badge="${m.id}"]`).forEach(el => {
+    if (!venc) { el.className = 'badge badge-none'; el.textContent = ''; return; }
+    el.className = venc === 'Empate' ? 'badge badge-draw' : 'badge badge-win';
+    el.textContent = venc === 'Empate' ? 'Empate' : '🏆 ' + venc;
+  });
+  document.querySelectorAll(`[data-saldo="${m.id}"]`).forEach(el => {
+    el.textContent = saldo !== null ? 'Saldo: ' + (saldo > 0 ? '+' + saldo : saldo) : '';
+  });
+}
+
+/* ── Bolão ────────────────────────────────────────── */
+function renderBolao() { renderLeaderboard(); renderMyPalpites(); }
+
+function renderLeaderboard() {
+  const el = document.getElementById('b-leaderboard');
+  if (!S.bolao.length) {
+    el.innerHTML = '<div class="sec-title">Classificação</div><p class="empty">Nenhum palpite registrado ainda.</p>';
+    return;
+  }
+  el.innerHTML = `
+    <div class="sec-title">Classificação</div>
+    <div class="lb-wrap">
+      <table class="lb-tbl">
+        <thead><tr><th>#</th><th>Jogador</th><th>Pts</th><th>✅ Exatos</th><th>〇 Resultado</th></tr></thead>
+        <tbody>
+          ${S.bolao.map((u, i) => `
+            <tr class="${u.username === S.user.username ? 'me' : ''}">
+              <td>${i + 1}</td>
+              <td>${u.username}${u.username === S.user.username ? '<span class="you-badge">você</span>' : ''}</td>
+              <td class="bold">${u.pts}</td>
+              <td>${u.exatos}</td>
+              <td>${u.resultado}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function renderMyPalpites() {
+  const el = document.getElementById('b-palpites');
+  const byDay = {};
+  S.matches.forEach(m => { if (!byDay[m.dia]) byDay[m.dia] = []; byDay[m.dia].push(m); });
+  const days = Object.keys(byDay).sort((a, b) => {
+    const parse = d => { const [dd, mm] = d.split('/'); return +mm * 100 + +dd; };
+    return parse(a) - parse(b);
+  });
+
+  let html = `<div class="pal-header">
+    <div class="sec-title" style="margin:0">Meus Palpites</div>
+    <button class="btn-save-pal" onclick="savePalpites()">💾 Salvar Palpites</button>
+  </div>`;
+
+  for (const day of days) {
+    html += `<div class="day-header">📅 ${day}</div>`;
+    for (const m of byDay[day]) {
+      const locked  = isLocked(m);
+      const played  = typeof m.p1 === 'number' && typeof m.p2 === 'number';
+      const pal     = S.pending[String(m.id)] || {};
+      const pv1 = pal.p1 !== undefined ? pal.p1 : '';
+      const pv2 = pal.p2 !== undefined ? pal.p2 : '';
+      let resultHtml = '';
+      if (played && pal.p1 !== undefined) {
+        const pts = scorePal(pal, m);
+        const icon = pts === 3 ? '✅ +3' : pts === 1 ? '〇 +1' : '✗ 0';
+        resultHtml = `<span class="pts-badge pts-${pts}">${icon}</span>`;
+      }
+      html += `
+        <div class="pal-card${locked ? ' locked' : ''}">
+          <span class="pal-team right">${m.sel1}</span>
+          <div class="pal-score-row">
+            <input class="pal-input" type="number" min="0" max="99" value="${pv1}"
+              placeholder="–" data-mid="${m.id}" data-side="p1" ${locked ? 'disabled' : ''}>
+            <span class="pal-sep">×</span>
+            <input class="pal-input" type="number" min="0" max="99" value="${pv2}"
+              placeholder="–" data-mid="${m.id}" data-side="p2" ${locked ? 'disabled' : ''}>
+          </div>
+          <span class="pal-team">${m.sel2}</span>
+          <span class="pal-meta">
+            ⏰ ${m.hora}${locked ? ' 🔒' : ''}
+            ${played ? `<span class="actual">${m.p1}×${m.p2}</span>` : ''}
+            ${resultHtml}
+          </span>
+        </div>`;
+    }
+  }
+
+  el.innerHTML = html;
+  el.querySelectorAll('.pal-input').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const id = inp.dataset.mid, side = inp.dataset.side;
+      if (!S.pending[id]) S.pending[id] = {};
+      const val = inp.value.trim();
+      if (val === '') delete S.pending[id][side];
+      else S.pending[id][side] = Math.max(0, +val || 0);
+    });
+  });
+}
+
+function scorePal(pal, m) {
+  const sig = x => x.p1 > x.p2 ? 1 : x.p1 < x.p2 ? -1 : 0;
+  if (pal.p1 === m.p1 && pal.p2 === m.p2) return 3;
+  if (sig(pal) === sig(m)) return 1;
+  return 0;
+}
+
+function matchDT(m) {
+  const [d, mo] = (m.dia || '').split('/').map(Number);
+  const [h, mi] = (m.hora || '').split(':').map(Number);
+  if (!d || !mo || isNaN(h)) return new Date(0);
+  return new Date(2026, mo - 1, d, h, mi);
+}
+function isLocked(m) { return matchDT(m) <= new Date(); }
+
+async function savePalpites() {
+  const toSave = {};
+  for (const [id, pal] of Object.entries(S.pending)) {
+    if (pal.p1 !== undefined && pal.p2 !== undefined) toSave[id] = { p1: pal.p1, p2: pal.p2 };
+  }
+  try {
+    await api('POST', '/api/palpites', toSave);
+    S.myPals  = await api('GET', '/api/palpites/me');
+    S.pending = JSON.parse(JSON.stringify(S.myPals));
+    S.bolao   = await api('GET', '/api/bolao');
+    renderLeaderboard();
+    renderMyPalpites();
+    toast('Palpites salvos! ✓', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ── User management ──────────────────────────────── */
+async function openUserModal() {
+  document.getElementById('user-modal').hidden = false;
+  document.getElementById('cu-err').hidden = true;
+  await refreshUserList();
+}
+function closeUserModal() { document.getElementById('user-modal').hidden = true; }
+
+async function refreshUserList() {
+  const users = await api('GET', '/api/users');
+  document.getElementById('user-list').innerHTML = users.map(u => `
+    <div class="user-item">
+      <div>${u.username}${u.isAdmin ? '<span class="admin-badge" style="margin-left:.4rem">admin</span>' : ''}</div>
+      ${!u.isAdmin ? `<button class="btn-danger" onclick="deleteUser('${u.username}')">Remover</button>` : ''}
+    </div>`).join('');
+}
+
+async function createUser(e) {
+  e.preventDefault();
+  const username = document.getElementById('cu-user').value.trim();
+  const password = document.getElementById('cu-pass').value;
+  const errEl = document.getElementById('cu-err');
+  errEl.hidden = true;
+  try {
+    await api('POST', '/api/users', { username, password });
+    document.getElementById('cu-user').value = '';
+    document.getElementById('cu-pass').value = '';
+    await refreshUserList();
+    toast(`Conta "${username}" criada!`, 'ok');
+  } catch (err) {
+    errEl.textContent = err.message; errEl.hidden = false;
+  }
+}
+
+async function deleteUser(username) {
+  if (!confirm(`Remover jogador "${username}" e todos os seus palpites?`)) return;
+  try {
+    await api('DELETE', `/api/users/${username}`);
+    S.bolao = await api('GET', '/api/bolao');
+    if (S.activeTab === 'bolao') renderLeaderboard();
+    await refreshUserList();
+    toast(`"${username}" removido.`, 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ── Toast ────────────────────────────────────────── */
+let toastTimer;
+function toast(msg, type) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = type + ' show';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault();
+    if (S.user?.isAdmin && S.activeTab === 'grupos') saveCSV();
+    else if (S.activeTab === 'bolao') savePalpites();
+  }
+});
+
+init();
+</script>
+</body>
+</html>

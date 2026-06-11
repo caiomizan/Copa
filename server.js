@@ -1,0 +1,209 @@
+const express = require('express');
+const session = require('express-session');
+const bcrypt  = require('bcryptjs');
+const fs      = require('fs');
+const path    = require('path');
+const { exec } = require('child_process');
+const http    = require('http');
+
+const app  = express();
+const PORT = process.env.PORT || 3026;
+const DEV  = process.env.NODE_ENV !== 'production';
+const DATA = path.join(__dirname, 'dados');
+const CSV  = path.join(DATA, 'Copa 2026 - Rodada 01.csv');
+const USERS    = path.join(DATA, 'users.json');
+const PALPITES = path.join(DATA, 'palpites.json');
+const ADMIN_UN = (process.env.ADMIN_USERNAME || 'admin').toLowerCase();
+
+// ── Init data files ──────────────────────────────────────────────
+fs.mkdirSync(DATA, { recursive: true });
+if (!fs.existsSync(USERS))    fs.writeFileSync(USERS,    '[]');
+if (!fs.existsSync(PALPITES)) fs.writeFileSync(PALPITES, '{}');
+
+const load = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
+const dump = (f, d) => fs.writeFileSync(f, JSON.stringify(d, null, 2), 'utf8');
+
+// ── Middleware ───────────────────────────────────────────────────
+app.use(express.json());
+app.use(express.text({ type: 'text/plain', limit: '2mb' }));
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'copa2026dev_changeme',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { maxAge: 7 * 86400 * 1000, secure: !DEV, httpOnly: true, sameSite: 'lax' },
+}));
+app.use(express.static(path.join(__dirname, 'public')));
+
+const needAuth  = (q, r, n) => q.session.user ? n() : r.status(401).json({ error: 'Não autenticado' });
+const needAdmin = (q, r, n) => q.session.user?.isAdmin ? n() : r.status(403).json({ error: 'Sem permissão' });
+
+// ── Auth ─────────────────────────────────────────────────────────
+app.get('/api/auth/status', (req, res) => {
+  res.json({ hasUsers: load(USERS, []).length > 0 });
+});
+
+app.get('/api/auth/me', (req, res) => {
+  req.session.user ? res.json(req.session.user) : res.status(401).json({ error: 'Não autenticado' });
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  const { username, password } = req.body || {};
+  const users = load(USERS, []);
+  const u = users.find(x => x.username.toLowerCase() === (username || '').toLowerCase().trim());
+  if (!u || !await bcrypt.compare(password || '', u.passwordHash))
+    return res.status(401).json({ error: 'Usuário ou senha incorretos' });
+  req.session.user = { username: u.username, isAdmin: u.isAdmin };
+  res.json({ username: u.username, isAdmin: u.isAdmin });
+});
+
+app.post('/api/auth/logout', (req, res) => req.session.destroy(() => res.json({ ok: true })));
+
+// ── Users (admin creates accounts) ──────────────────────────────
+app.get('/api/users', needAuth, needAdmin, (req, res) => {
+  res.json(load(USERS, []).map(({ username, isAdmin }) => ({ username, isAdmin })));
+});
+
+// POST /api/users: admin-only after first user is created
+app.post('/api/users', async (req, res) => {
+  const users = load(USERS, []);
+  // Allow if no users yet (first = admin bootstrap) OR caller is admin
+  if (users.length > 0 && !req.session.user?.isAdmin)
+    return res.status(403).json({ error: 'Apenas o administrador pode criar contas' });
+
+  const { username, password } = req.body || {};
+  const name = (username || '').trim();
+  if (name.length < 2 || (password || '').length < 4)
+    return res.status(400).json({ error: 'Usuário (mín. 2) e senha (mín. 4) obrigatórios' });
+  if (users.find(u => u.username.toLowerCase() === name.toLowerCase()))
+    return res.status(400).json({ error: 'Usuário já existe' });
+
+  const isAdmin = name.toLowerCase() === ADMIN_UN;
+  users.push({ username: name, passwordHash: await bcrypt.hash(password, 10), isAdmin });
+  dump(USERS, users);
+
+  // If no session yet (admin bootstrapping themselves), log them in
+  if (!req.session.user) {
+    req.session.user = { username: name, isAdmin };
+    return res.json({ username: name, isAdmin });
+  }
+  res.json({ username: name, isAdmin });
+});
+
+app.delete('/api/users/:username', needAuth, needAdmin, (req, res) => {
+  const target = req.params.username;
+  if (target === req.session.user.username)
+    return res.status(400).json({ error: 'Não é possível excluir sua própria conta' });
+  let users = load(USERS, []);
+  const before = users.length;
+  users = users.filter(u => u.username !== target);
+  if (users.length === before) return res.status(404).json({ error: 'Usuário não encontrado' });
+  dump(USERS, users);
+  // Remove their palpites too
+  const all = load(PALPITES, {});
+  delete all[target];
+  dump(PALPITES, all);
+  res.json({ ok: true });
+});
+
+// ── CSV ──────────────────────────────────────────────────────────
+app.get('/api/csv', needAuth, (req, res) => {
+  try { res.type('text/plain').send(fs.readFileSync(CSV, 'utf8')); }
+  catch { res.status(404).send(''); }
+});
+
+app.post('/api/csv', needAuth, needAdmin, (req, res) => {
+  try {
+    fs.writeFileSync(CSV, typeof req.body === 'string' ? req.body : '', 'utf8');
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Palpites ─────────────────────────────────────────────────────
+app.get('/api/palpites/me', needAuth, (req, res) => {
+  res.json(load(PALPITES, {})[req.session.user.username] || {});
+});
+
+app.get('/api/palpites/all', needAuth, (req, res) => {
+  res.json(load(PALPITES, {}));
+});
+
+app.post('/api/palpites', needAuth, (req, res) => {
+  const incoming = req.body || {};
+  const all  = load(PALPITES, {});
+  const existing = all[req.session.user.username] || {};
+
+  // Parse match lock times from CSV
+  const locks = {};
+  try {
+    const lines = fs.readFileSync(CSV, 'utf8').split(/\r?\n/).filter(l => l.trim()).slice(1);
+    lines.forEach((line, i) => {
+      const cols = line.split(',');
+      const [d, mo] = (cols[6] || '').split('/').map(Number);
+      const [h, mi] = (cols[7] || '').split(':').map(Number);
+      locks[String(i)] = new Date(2026, mo - 1, d, h, mi);
+    });
+  } catch {}
+
+  const now = new Date();
+  const saved = {};
+  for (const [id, pal] of Object.entries(incoming)) {
+    if (locks[id] && locks[id] <= now) {
+      // Match locked — keep whatever was already saved
+      if (existing[id]) saved[id] = existing[id];
+    } else {
+      saved[id] = pal;
+    }
+  }
+  // Preserve locked matches not included in this request
+  for (const [id, pal] of Object.entries(existing)) {
+    if (locks[id] && locks[id] <= now && !saved[id]) saved[id] = pal;
+  }
+
+  all[req.session.user.username] = saved;
+  dump(PALPITES, all);
+  res.json({ ok: true });
+});
+
+// ── Bolão leaderboard ────────────────────────────────────────────
+app.get('/api/bolao', needAuth, (req, res) => {
+  const allPals = load(PALPITES, {});
+  let csvText = '';
+  try { csvText = fs.readFileSync(CSV, 'utf8'); } catch { return res.json([]); }
+
+  const lines = csvText.split(/\r?\n/).filter(l => l.trim()).slice(1);
+  const results = {};
+  lines.forEach((line, i) => {
+    const cols = line.split(',');
+    let p1 = (cols[1] || '').trim(), p2 = (cols[2] || '').trim();
+    if (/^\d+x\d+$/i.test(p1)) { [p1, p2] = p1.split(/x/i); }
+    if (p1 !== '' && p2 !== '') results[String(i)] = { p1: +p1, p2: +p2 };
+  });
+
+  const sig = v => v.p1 > v.p2 ? 1 : v.p1 < v.p2 ? -1 : 0;
+  const board = Object.entries(allPals).map(([username, pals]) => {
+    let pts = 0, exatos = 0, resultado = 0;
+    for (const [id, pal] of Object.entries(pals)) {
+      const r = results[id]; if (!r) continue;
+      if (pal.p1 === r.p1 && pal.p2 === r.p2) { pts += 3; exatos++; }
+      else if (sig(pal) === sig(r))             { pts += 1; resultado++; }
+    }
+    return { username, pts, exatos, resultado };
+  }).sort((a, b) => b.pts - a.pts || b.exatos - a.exatos);
+
+  res.json(board);
+});
+
+// ── Start ────────────────────────────────────────────────────────
+const server = http.createServer(app);
+server.on('error', err => {
+  if (err.code === 'EADDRINUSE') {
+    const url = `http://127.0.0.1:${PORT}`;
+    console.log(`\nPorta em uso. Abrindo ${url}\n`);
+    exec(`start ${url}`);
+    process.exit(0);
+  } else throw err;
+});
+server.listen(PORT, DEV ? '127.0.0.1' : '0.0.0.0', () => {
+  console.log(`\n⚽  Copa 2026 Bolão rodando na porta ${PORT}\n`);
+  if (DEV) exec(`start http://127.0.0.1:${PORT}`);
+});
