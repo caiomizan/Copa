@@ -308,7 +308,7 @@
       <span id="h-user"></span>
       <button id="h-users-btn"  class="btn-ghost" onclick="openUserModal()" hidden>👥 Usuários</button>
       <button id="h-save-btn"   class="btn-ghost" onclick="saveCSV()" hidden>💾 Salvar</button>
-      <button id="h-backup-btn" class="btn-ghost" onclick="window.location='/api/admin/backup'" hidden>⬇ Backup</button>
+      <button id="h-backup-btn" class="btn-ghost" onclick="downloadDados()" hidden>⬇ Dados</button>
       <button class="btn-ghost" onclick="openPassModal()">🔑 Senha</button>
       <button class="btn-ghost" onclick="doLogout()">Sair</button>
     </div>
@@ -859,6 +859,20 @@ async function deleteUser(username) {
     await refreshUserList();
     toast(`"${username}" removido.`, 'ok');
   } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ── Backup ───────────────────────────────────────── */
+function downloadDados() {
+  ['users.json', 'palpites.json'].forEach((file, i) => {
+    setTimeout(() => {
+      const a = document.createElement('a');
+      a.href = `/api/admin/dados/${file}`;
+      a.download = file;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }, i * 600);
+  });
 }
 
 /* ── Trocar senha (próprio usuário) ──────────────── */

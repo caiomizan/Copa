@@ -252,11 +252,12 @@ app.get('/api/admin/backup', needAuth, needAdmin, (req, res) => {
   res.json({ users: load(USERS, []), palpites: load(PALPITES, {}) });
 });
 
-// Serve each raw data file individually (para scripts de sincronização)
+// Serve each raw data file individually com download forçado
 app.get('/api/admin/dados/:file', needAuth, needAdmin, (req, res) => {
   const allowed = ['users.json', 'palpites.json'];
   const { file } = req.params;
   if (!allowed.includes(file)) return res.status(403).json({ error: 'Acesso negado' });
+  res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
   try { res.type('application/json').send(fs.readFileSync(path.join(DATA, file), 'utf8')); }
   catch { res.json(file === 'users.json' ? [] : {}); }
 });
