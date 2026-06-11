@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
 const bcrypt  = require('bcryptjs');
@@ -15,13 +16,26 @@ const USERS    = path.join(DATA, 'users.json');
 const PALPITES = path.join(DATA, 'palpites.json');
 const ADMIN_UN = (process.env.ADMIN_USERNAME || 'admin').toLowerCase();
 
+const load = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
+const dump = (f, d) => fs.writeFileSync(f, JSON.stringify(d, null, 2), 'utf8');
+
 // ── Init data files ──────────────────────────────────────────────
 fs.mkdirSync(DATA, { recursive: true });
 if (!fs.existsSync(USERS))    fs.writeFileSync(USERS,    '[]');
 if (!fs.existsSync(PALPITES)) fs.writeFileSync(PALPITES, '{}');
 
-const load = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
-const dump = (f, d) => fs.writeFileSync(f, JSON.stringify(d, null, 2), 'utf8');
+// Auto-cria admin se ADMIN_PASSWORD estiver definido e usuário ainda não existir
+function bootstrapAdmin() {
+  const adminPass = process.env.ADMIN_PASSWORD;
+  if (!adminPass) return;
+  const users = load(USERS, []);
+  if (users.find(u => u.username.toLowerCase() === ADMIN_UN)) return;
+  const adminName = process.env.ADMIN_USERNAME || 'admin';
+  users.push({ username: adminName, passwordHash: bcrypt.hashSync(adminPass, 10), isAdmin: true });
+  dump(USERS, users);
+  console.log(`  Admin "${adminName}" criado automaticamente.`);
+}
+bootstrapAdmin();
 
 // ── Middleware ───────────────────────────────────────────────────
 app.use(express.json());
