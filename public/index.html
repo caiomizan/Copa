@@ -680,7 +680,7 @@ function buildMatchCard(m) {
   if (S.user.isAdmin) {
     card.querySelectorAll('.score-input').forEach(inp => {
       inp.addEventListener('input', () => {
-        const match = S.matches.find(x => x.id === +inp.dataset.id);
+        const match = S.matches.find(x => x.id === inp.dataset.id);
         const val = inp.value.trim();
         match[inp.dataset.side] = val === '' ? '' : Math.max(0, +val || 0);
         refreshBadge(match);
@@ -1006,7 +1006,7 @@ function renderLista() {
   if (S.user.isAdmin) {
     el.querySelectorAll('.lista-score-inp').forEach(inp => {
       inp.addEventListener('input', () => {
-        const match = S.matches.find(x => x.id === +inp.dataset.id);
+        const match = S.matches.find(x => x.id === inp.dataset.id);
         if (!match) return;
         const val = inp.value.trim();
         match[inp.dataset.side] = val === '' ? '' : Math.max(0, +val || 0);
