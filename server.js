@@ -14,12 +14,14 @@ const DEV  = process.env.NODE_ENV !== 'production';
 if (!DEV) app.set('trust proxy', 1);
 
 // ── Firebase ─────────────────────────────────────────────────────
+// FIREBASE_SERVICE_ACCOUNT: JSON do serviceAccountKey.json em base64
+// (evita problemas de newline com FIREBASE_PRIVATE_KEY em variáveis de ambiente)
+const _sa = process.env.FIREBASE_SERVICE_ACCOUNT;
+if (!_sa) { console.error('FIREBASE_SERVICE_ACCOUNT não definida.'); process.exit(1); }
 admin.initializeApp({
-  credential: admin.credential.cert({
-    projectId:   process.env.FIREBASE_PROJECT_ID,
-    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-    privateKey:  (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
-  }),
+  credential: admin.credential.cert(
+    JSON.parse(Buffer.from(_sa, 'base64').toString('utf8'))
+  ),
 });
 const db = admin.firestore();
 const ADMIN_UN = (process.env.ADMIN_USERNAME || 'admin').toLowerCase();
