@@ -358,6 +358,18 @@
       <div id="cu-err" class="form-err" hidden></div>
       <button type="submit" class="btn-primary" style="margin-top:.25rem">Criar conta</button>
     </form>
+    <hr class="modal-divider">
+    <p class="modal-label">Rodadas</p>
+    <div id="rodadas-list" style="font-size:.82rem;color:var(--muted);margin-bottom:.75rem;line-height:1.9"></div>
+    <label id="csv-upload-label" style="display:block;text-align:center;cursor:pointer;
+           background:var(--bg);border:1px dashed var(--border);border-radius:7px;
+           padding:.65rem;color:var(--muted);font-size:.85rem;transition:border-color .2s"
+           onmouseover="this.style.borderColor='var(--accent)'"
+           onmouseout="this.style.borderColor='var(--border)'">
+      📁 Carregar CSV de nova rodada
+      <input type="file" accept=".csv" id="csv-upload" style="display:none" onchange="uploadRodada(this)">
+    </label>
+    <div id="upload-err" class="form-err" hidden style="margin-top:.5rem"></div>
   </div>
 </div>
 
@@ -816,7 +828,32 @@ async function savePalpites() {
 async function openUserModal() {
   document.getElementById('user-modal').hidden = false;
   document.getElementById('cu-err').hidden = true;
-  await refreshUserList();
+  document.getElementById('upload-err').hidden = true;
+  await Promise.all([refreshUserList(), loadRodadas()]);
+}
+
+async function loadRodadas() {
+  const files = await api('GET', '/api/csv').catch(() => []);
+  const el = document.getElementById('rodadas-list');
+  el.innerHTML = files.length
+    ? files.map(f => `📄 ${f.filename}`).join('<br>')
+    : '<em>Nenhuma rodada no banco ainda.</em>';
+}
+
+async function uploadRodada(input) {
+  const file = input.files[0]; if (!file) return;
+  const errEl = document.getElementById('upload-err');
+  errEl.hidden = true;
+  try {
+    const text = await file.text();
+    await api('POST', '/api/csv', { filename: file.name, text });
+    await loadAll();
+    if (S.activeTab === 'grupos') renderGrupos();
+    if (S.activeTab === 'lista')  renderLista();
+    await loadRodadas();
+    toast(`"${file.name}" carregada! ✓`, 'ok');
+  } catch (ex) { errEl.textContent = ex.message; errEl.hidden = false; }
+  input.value = '';
 }
 function closeUserModal() { document.getElementById('user-modal').hidden = true; }
 

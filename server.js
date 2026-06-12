@@ -6,52 +6,46 @@ const fs      = require('fs');
 const path    = require('path');
 const { exec } = require('child_process');
 const http    = require('http');
+const admin   = require('firebase-admin');
 
 const app  = express();
 const PORT = process.env.PORT || 3026;
 const DEV  = process.env.NODE_ENV !== 'production';
-if (!DEV) app.set('trust proxy', 1); // Render/Heroku: proxy HTTPS→HTTP
-const DATA     = path.join(__dirname, 'dados');
-const USERS    = path.join(DATA, 'users.json');
-const PALPITES = path.join(DATA, 'palpites.json');
+if (!DEV) app.set('trust proxy', 1);
 
-function getCSVFiles() {
-  try { return fs.readdirSync(DATA).filter(f => /\.csv$/i.test(f)).sort(); }
-  catch { return []; }
-}
-function getAllMatchLines() {
-  return getCSVFiles().flatMap(f => {
-    try {
-      return fs.readFileSync(path.join(DATA, f), 'utf8')
-        .split(/\r?\n/).filter(l => l.trim()).slice(1);
-    } catch { return []; }
-  });
-}
+// ── Firebase ─────────────────────────────────────────────────────
+admin.initializeApp({
+  credential: admin.credential.cert({
+    projectId:   process.env.FIREBASE_PROJECT_ID,
+    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+    privateKey:  (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
+  }),
+});
+const db = admin.firestore();
 const ADMIN_UN = (process.env.ADMIN_USERNAME || 'admin').toLowerCase();
 
-const load = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
-const dump = (f, d) => fs.writeFileSync(f, JSON.stringify(d, null, 2), 'utf8');
+// ── Helpers Firestore ─────────────────────────────────────────────
+const getUsers = async () =>
+  (await db.collection('usuarios').get()).docs.map(d => d.data());
 
-// ── Init data files ──────────────────────────────────────────────
-fs.mkdirSync(DATA, { recursive: true });
-if (!fs.existsSync(USERS))    fs.writeFileSync(USERS,    '[]');
-if (!fs.existsSync(PALPITES)) fs.writeFileSync(PALPITES, '{}');
+const getAllPalpites = async () => {
+  const res = {};
+  (await db.collection('palpites').get()).docs
+    .forEach(d => { res[d.id] = d.data().dados || {}; });
+  return res;
+};
 
-// Auto-cria admin se ADMIN_PASSWORD estiver definido e usuário ainda não existir
-function bootstrapAdmin() {
-  const adminPass = process.env.ADMIN_PASSWORD;
-  if (!adminPass) return;
-  const users = load(USERS, []);
-  if (users.find(u => u.username.toLowerCase() === ADMIN_UN)) return;
-  const adminName = process.env.ADMIN_USERNAME || 'admin';
-  users.push({ username: adminName, passwordHash: bcrypt.hashSync(adminPass, 10), isAdmin: true });
-  dump(USERS, users);
-  console.log(`  Admin "${adminName}" criado automaticamente.`);
-}
-bootstrapAdmin();
+const getAllMatchLines = async () => {
+  const lines = [];
+  (await db.collection('rodadas').orderBy('filename').get()).docs.forEach(d =>
+    (d.data().text || '').split(/\r?\n/).filter(l => l.trim()).slice(1)
+      .forEach(l => lines.push(l))
+  );
+  return lines;
+};
 
 // ── Middleware ───────────────────────────────────────────────────
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '4mb' }));
 app.use(session({
   secret: process.env.SESSION_SECRET || 'copa2026dev_changeme',
   resave: false,
@@ -64,8 +58,9 @@ const needAuth  = (q, r, n) => q.session.user ? n() : r.status(401).json({ error
 const needAdmin = (q, r, n) => q.session.user?.isAdmin ? n() : r.status(403).json({ error: 'Sem permissão' });
 
 // ── Auth ─────────────────────────────────────────────────────────
-app.get('/api/auth/status', (req, res) => {
-  res.json({ hasUsers: load(USERS, []).length > 0 });
+app.get('/api/auth/status', async (req, res) => {
+  const users = await getUsers();
+  res.json({ hasUsers: users.length > 0 });
 });
 
 app.get('/api/auth/me', (req, res) => {
@@ -74,7 +69,7 @@ app.get('/api/auth/me', (req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
   const { username, password } = req.body || {};
-  const users = load(USERS, []);
+  const users = await getUsers();
   const u = users.find(x => x.username.toLowerCase() === (username || '').toLowerCase().trim());
   if (!u || !await bcrypt.compare(password || '', u.passwordHash))
     return res.status(401).json({ error: 'Usuário ou senha incorretos' });
@@ -88,25 +83,24 @@ app.post('/api/auth/change-password', needAuth, async (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
   if (!newPassword || newPassword.length < 4)
     return res.status(400).json({ error: 'Nova senha deve ter no mínimo 4 caracteres' });
-  const users = load(USERS, []);
+  const users = await getUsers();
   const u = users.find(x => x.username === req.session.user.username);
   if (!u) return res.status(404).json({ error: 'Usuário não encontrado' });
   if (!await bcrypt.compare(currentPassword || '', u.passwordHash))
     return res.status(401).json({ error: 'Senha atual incorreta' });
-  u.passwordHash = await bcrypt.hash(newPassword, 10);
-  dump(USERS, users);
+  await db.collection('usuarios').doc(u.username)
+    .update({ passwordHash: await bcrypt.hash(newPassword, 10) });
   res.json({ ok: true });
 });
 
-// ── Users (admin creates accounts) ──────────────────────────────
-app.get('/api/users', needAuth, needAdmin, (req, res) => {
-  res.json(load(USERS, []).map(({ username, isAdmin }) => ({ username, isAdmin })));
+// ── Usuários ─────────────────────────────────────────────────────
+app.get('/api/users', needAuth, needAdmin, async (req, res) => {
+  const users = await getUsers();
+  res.json(users.map(({ username, isAdmin }) => ({ username, isAdmin })));
 });
 
-// POST /api/users: admin-only after first user is created
 app.post('/api/users', async (req, res) => {
-  const users = load(USERS, []);
-  // Allow if no users yet (first = admin bootstrap) OR caller is admin
+  const users = await getUsers();
   if (users.length > 0 && !req.session.user?.isAdmin)
     return res.status(403).json({ error: 'Apenas o administrador pode criar contas' });
 
@@ -118,10 +112,10 @@ app.post('/api/users', async (req, res) => {
     return res.status(400).json({ error: 'Usuário já existe' });
 
   const isAdmin = name.toLowerCase() === ADMIN_UN;
-  users.push({ username: name, passwordHash: await bcrypt.hash(password, 10), isAdmin });
-  dump(USERS, users);
+  await db.collection('usuarios').doc(name).set({
+    username: name, passwordHash: await bcrypt.hash(password, 10), isAdmin,
+  });
 
-  // If no session yet (admin bootstrapping themselves), log them in
   if (!req.session.user) {
     req.session.user = { username: name, isAdmin };
     return res.json({ username: name, isAdmin });
@@ -133,66 +127,56 @@ app.post('/api/users/:username/reset-password', needAuth, needAdmin, async (req,
   const { newPassword } = req.body || {};
   if (!newPassword || newPassword.length < 4)
     return res.status(400).json({ error: 'Nova senha deve ter no mínimo 4 caracteres' });
-  const users = load(USERS, []);
-  const u = users.find(x => x.username === req.params.username);
-  if (!u) return res.status(404).json({ error: 'Usuário não encontrado' });
-  u.passwordHash = await bcrypt.hash(newPassword, 10);
-  dump(USERS, users);
+  const ref = db.collection('usuarios').doc(req.params.username);
+  if (!(await ref.get()).exists) return res.status(404).json({ error: 'Usuário não encontrado' });
+  await ref.update({ passwordHash: await bcrypt.hash(newPassword, 10) });
   res.json({ ok: true });
 });
 
-app.delete('/api/users/:username', needAuth, needAdmin, (req, res) => {
+app.delete('/api/users/:username', needAuth, needAdmin, async (req, res) => {
   const target = req.params.username;
   if (target === req.session.user.username)
     return res.status(400).json({ error: 'Não é possível excluir sua própria conta' });
-  let users = load(USERS, []);
-  const before = users.length;
-  users = users.filter(u => u.username !== target);
-  if (users.length === before) return res.status(404).json({ error: 'Usuário não encontrado' });
-  dump(USERS, users);
-  // Remove their palpites too
-  const all = load(PALPITES, {});
-  delete all[target];
-  dump(PALPITES, all);
+  const ref = db.collection('usuarios').doc(target);
+  if (!(await ref.get()).exists) return res.status(404).json({ error: 'Usuário não encontrado' });
+  await ref.delete();
+  await db.collection('palpites').doc(target).delete();
   res.json({ ok: true });
 });
 
-// ── CSV ──────────────────────────────────────────────────────────
-app.get('/api/csv', needAuth, (req, res) => {
-  res.json(getCSVFiles().map(f => {
-    try { return { filename: f, text: fs.readFileSync(path.join(DATA, f), 'utf8') }; }
-    catch { return { filename: f, text: '' }; }
-  }));
+// ── Rodadas (CSV no Firestore) ────────────────────────────────────
+app.get('/api/csv', needAuth, async (req, res) => {
+  const snap = await db.collection('rodadas').orderBy('filename').get();
+  res.json(snap.docs.map(d => ({ filename: d.data().filename, text: d.data().text || '' })));
 });
 
-app.post('/api/csv', needAuth, needAdmin, (req, res) => {
+app.post('/api/csv', needAuth, needAdmin, async (req, res) => {
   const { filename, text } = req.body || {};
   if (!filename || !/\.csv$/i.test(filename))
     return res.status(400).json({ error: 'Arquivo inválido' });
-  try {
-    fs.writeFileSync(path.join(DATA, path.basename(filename)), text || '', 'utf8');
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  await db.collection('rodadas').doc(filename).set({ filename, text: text || '' });
+  res.json({ ok: true });
 });
 
 // ── Palpites ─────────────────────────────────────────────────────
-app.get('/api/palpites/me', needAuth, (req, res) => {
-  res.json(load(PALPITES, {})[req.session.user.username] || {});
+app.get('/api/palpites/me', needAuth, async (req, res) => {
+  const doc = await db.collection('palpites').doc(req.session.user.username).get();
+  res.json(doc.exists ? (doc.data().dados || {}) : {});
 });
 
-app.get('/api/palpites/all', needAuth, (req, res) => {
-  res.json(load(PALPITES, {}));
+app.get('/api/palpites/all', needAuth, async (req, res) => {
+  res.json(await getAllPalpites());
 });
 
-app.post('/api/palpites', needAuth, (req, res) => {
+app.post('/api/palpites', needAuth, async (req, res) => {
   const incoming = req.body || {};
-  const all  = load(PALPITES, {});
-  const existing = all[req.session.user.username] || {};
+  const username = req.session.user.username;
+  const existingDoc = await db.collection('palpites').doc(username).get();
+  const existing = existingDoc.exists ? (existingDoc.data().dados || {}) : {};
 
-  // Parse match lock times from all CSV files (global sequential IDs)
   const locks = {};
   try {
-    getAllMatchLines().forEach((line, i) => {
+    (await getAllMatchLines()).forEach((line, i) => {
       const cols = line.split(',');
       const [d, mo] = (cols[6] || '').split('/').map(Number);
       const [h, mi] = (cols[7] || '').split(':').map(Number);
@@ -203,27 +187,20 @@ app.post('/api/palpites', needAuth, (req, res) => {
   const now = new Date();
   const saved = {};
   for (const [id, pal] of Object.entries(incoming)) {
-    if (locks[id] && locks[id] <= now) {
-      // Match locked — keep whatever was already saved
-      if (existing[id]) saved[id] = existing[id];
-    } else {
-      saved[id] = pal;
-    }
+    if (locks[id] && locks[id] <= now) { if (existing[id]) saved[id] = existing[id]; }
+    else saved[id] = pal;
   }
-  // Preserve locked matches not included in this request
   for (const [id, pal] of Object.entries(existing)) {
     if (locks[id] && locks[id] <= now && !saved[id]) saved[id] = pal;
   }
 
-  all[req.session.user.username] = saved;
-  dump(PALPITES, all);
+  await db.collection('palpites').doc(username).set({ dados: saved });
   res.json({ ok: true });
 });
 
 // ── Bolão leaderboard ────────────────────────────────────────────
-app.get('/api/bolao', needAuth, (req, res) => {
-  const allPals = load(PALPITES, {});
-  const lines = getAllMatchLines();
+app.get('/api/bolao', needAuth, async (req, res) => {
+  const [allPals, lines] = await Promise.all([getAllPalpites(), getAllMatchLines()]);
   const results = {};
   lines.forEach((line, i) => {
     const cols = line.split(',');
@@ -246,20 +223,19 @@ app.get('/api/bolao', needAuth, (req, res) => {
   res.json(board);
 });
 
-// ── Admin: backup / restore ──────────────────────────────────────
-app.get('/api/admin/backup', needAuth, needAdmin, (req, res) => {
+// ── Admin: backup ────────────────────────────────────────────────
+app.get('/api/admin/backup', needAuth, needAdmin, async (req, res) => {
+  const [users, palpites] = await Promise.all([getUsers(), getAllPalpites()]);
   res.setHeader('Content-Disposition', 'attachment; filename="backup-copa.json"');
-  res.json({ users: load(USERS, []), palpites: load(PALPITES, {}) });
+  res.json({ users, palpites });
 });
 
-// Serve each raw data file individually com download forçado
-app.get('/api/admin/dados/:file', needAuth, needAdmin, (req, res) => {
-  const allowed = ['users.json', 'palpites.json'];
+app.get('/api/admin/dados/:file', needAuth, needAdmin, async (req, res) => {
   const { file } = req.params;
-  if (!allowed.includes(file)) return res.status(403).json({ error: 'Acesso negado' });
+  if (!['users.json', 'palpites.json'].includes(file))
+    return res.status(403).json({ error: 'Acesso negado' });
   res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
-  try { res.type('application/json').send(fs.readFileSync(path.join(DATA, file), 'utf8')); }
-  catch { res.json(file === 'users.json' ? [] : {}); }
+  res.json(file === 'users.json' ? await getUsers() : await getAllPalpites());
 });
 
 // ── Start ────────────────────────────────────────────────────────
@@ -272,7 +248,43 @@ server.on('error', err => {
     process.exit(0);
   } else throw err;
 });
-server.listen(PORT, DEV ? '127.0.0.1' : '0.0.0.0', () => {
-  console.log(`\n⚽  Copa 2026 Bolão rodando na porta ${PORT}\n`);
-  if (DEV) exec(`start http://127.0.0.1:${PORT}`);
-});
+
+async function startup() {
+  console.log('\n⚽  Copa 2026 Bolão — iniciando...');
+
+  // Migra CSVs locais para o Firestore na primeira execução
+  const rodadasSnap = await db.collection('rodadas').limit(1).get();
+  if (rodadasSnap.empty) {
+    const localDir = path.join(__dirname, 'dados');
+    try {
+      const csvFiles = fs.readdirSync(localDir).filter(f => /\.csv$/i.test(f)).sort();
+      for (const f of csvFiles) {
+        const text = fs.readFileSync(path.join(localDir, f), 'utf8');
+        await db.collection('rodadas').doc(f).set({ filename: f, text });
+        console.log(`  Rodada migrada: ${f}`);
+      }
+    } catch { /* sem CSVs locais para migrar */ }
+  }
+
+  // Auto-cria admin
+  const adminPass = process.env.ADMIN_PASSWORD;
+  if (adminPass) {
+    const users = await getUsers();
+    if (!users.find(u => u.username.toLowerCase() === ADMIN_UN)) {
+      const adminName = process.env.ADMIN_USERNAME || 'admin';
+      await db.collection('usuarios').doc(adminName).set({
+        username: adminName,
+        passwordHash: bcrypt.hashSync(adminPass, 10),
+        isAdmin: true,
+      });
+      console.log(`  Admin "${adminName}" criado automaticamente.`);
+    }
+  }
+
+  server.listen(PORT, DEV ? '127.0.0.1' : '0.0.0.0', () => {
+    console.log(`  Rodando na porta ${PORT}\n`);
+    if (DEV) exec(`start http://127.0.0.1:${PORT}`);
+  });
+}
+
+startup().catch(err => { console.error('Erro fatal na inicialização:', err); process.exit(1); });
