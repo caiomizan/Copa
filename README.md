@@ -10,13 +10,12 @@ Permite registrar resultados, calcular classificação por grupo e competir com 
 ```
 Copa/
 ├── dados/
-│   ├── Copa 2026 - Rodada 01.csv   → placar e informações dos jogos
-│   ├── users.json                   → contas dos jogadores (criado automaticamente)
-│   └── palpites.json                → palpites salvos (criado automaticamente)
+│   └── Copa 2026 - Rodada 01.csv   → placar e informações dos jogos (importado para o Firestore na primeira execução)
 ├── public/
 │   └── index.html                   → interface web (SPA)
 ├── .env                             → variáveis de ambiente locais (não vai pro git)
 ├── .gitignore
+├── baixar-dados.ps1                 → script para baixar backup do servidor Render
 ├── iniciar.bat                      → atalho para rodar localmente no Windows
 ├── package.json
 ├── render.yaml                      → configuração de deploy no Render
@@ -27,21 +26,25 @@ Copa/
 
 ## Rodando localmente
 
-### Pré-requisito
+### Pré-requisitos
 - [Node.js 18+](https://nodejs.org)
+- Projeto no Firebase com Firestore habilitado (ver seção abaixo)
 
 ### 1. Configurar o `.env`
 
-O arquivo `.env` já existe na raiz do projeto com as credenciais do admin:
+Crie o arquivo `.env` na raiz com o seguinte conteúdo:
 
-```env
+```
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD=hexa2026
-SESSION_SECRET=copa2026local
+ADMIN_PASSWORD=sua_senha_aqui
+SESSION_SECRET=qualquer_string_aleatoria
+FIREBASE_SERVICE_ACCOUNT=<base64 do serviceAccountKey.json>
 ```
 
 > O servidor cria o usuário admin automaticamente na primeira inicialização
 > com base nessas variáveis.
+
+Para gerar o valor de `FIREBASE_SERVICE_ACCOUNT`, veja a seção [Firebase](#firebase).
 
 ### 2. Instalar dependências (só na primeira vez)
 
@@ -62,6 +65,39 @@ O servidor abre automaticamente em `http://127.0.0.1:3026`.
 
 ---
 
+## Firebase
+
+O app usa o [Firebase Firestore](https://firebase.google.com) para armazenar usuários, palpites e rodadas.
+
+### Criar o projeto Firebase
+
+1. Acesse [console.firebase.google.com](https://console.firebase.google.com) e crie um novo projeto
+2. No menu lateral, vá em **Firestore Database → Criar banco de dados**
+3. Escolha o modo **Produção** e a região mais próxima (ex: `southamerica-east1`)
+4. Vá em **Configurações do projeto → Contas de serviço**
+5. Clique em **Gerar nova chave privada** e salve o arquivo `serviceAccountKey.json`
+
+### Gerar a variável `FIREBASE_SERVICE_ACCOUNT`
+
+O arquivo JSON é codificado em base64 para evitar problemas com quebras de linha em variáveis de ambiente.
+
+**PowerShell (Windows):**
+```powershell
+[Convert]::ToBase64String([System.IO.File]::ReadAllBytes("serviceAccountKey.json")) | clip
+```
+
+Cole o resultado no `.env` como valor de `FIREBASE_SERVICE_ACCOUNT`.
+
+### Coleções criadas automaticamente
+
+| Coleção | Conteúdo |
+|---------|----------|
+| `usuarios` | Contas dos jogadores |
+| `palpites` | Um documento por jogador com todos os seus palpites |
+| `rodadas` | Arquivos CSV das rodadas (importados automaticamente do `dados/` na primeira execução) |
+
+---
+
 ## Como usar
 
 ### Perfil administrador
@@ -69,13 +105,14 @@ O servidor abre automaticamente em `http://127.0.0.1:3026`.
 O admin é o responsável por cadastrar os outros jogadores e registrar os resultados.
 
 **Primeiro acesso:**
-1. Acesse `http://127.0.0.1:3026`
-2. Faça login com as credenciais do `.env` (`admin` / `hexa2026`)
+1. Acesse a URL do app
+2. Faça login com as credenciais definidas no `.env`
 
 **Cadastrar jogadores:**
 1. Clique em **👥 Usuários** no topo da página
 2. Preencha o usuário e uma senha provisória
 3. Informe as credenciais ao amigo (WhatsApp, etc.)
+4. O jogador pode alterar a própria senha depois em **🔑 Senha**
 
 **Registrar resultados:**
 1. Vá na aba **Grupos**
@@ -91,7 +128,7 @@ O admin é o responsável por cadastrar os outros jogadores e registrar os resul
 3. Preencha os palpites de cada jogo
 4. Clique em **💾 Salvar Palpites** ou pressione `Ctrl+S`
 
-> **Atenção:** os palpites travam automaticamente no horário de início de cada jogo.
+> **Atenção:** os palpites travam automaticamente no horário de início de cada jogo (horário de Brasília).
 > Salve antes do apito inicial.
 
 ### Pontuação do bolão
@@ -129,23 +166,34 @@ git push -u origin main
 2. Clique em **New → Web Service**
 3. Conecte o repositório GitHub
 4. O Render detecta o `render.yaml` automaticamente — confirme as configurações
-5. Adicione as variáveis de ambiente no painel do Render:
+5. Adicione as variáveis de ambiente no painel do Render (**Environment**):
 
 | Variável | Valor |
 |----------|-------|
-| `ADMIN_USERNAME` | `admin` |
-| `ADMIN_PASSWORD` | `hexa2026` (ou outra senha forte) |
-| `NODE_ENV` | `production` |
-| `SESSION_SECRET` | (gerado automaticamente pelo render.yaml) |
+| `ADMIN_USERNAME` | nome do usuário admin (ex: `admin`) |
+| `ADMIN_PASSWORD` | senha forte do admin |
+| `FIREBASE_SERVICE_ACCOUNT` | base64 do `serviceAccountKey.json` |
+
+> `SESSION_SECRET` é gerado automaticamente pelo `render.yaml`.
 
 6. Clique em **Deploy**
 
-Após o deploy, o Render fornece uma URL pública (ex: `https://copa-2026.onrender.com`) para compartilhar com os amigos.
+Após o deploy, o Render fornece uma URL pública para compartilhar com os amigos.
 
-> **Importante:** o plano gratuito do Render hiberna o servidor após 15 minutos
-> sem acesso. O primeiro acesso após a hibernação pode demorar ~30 segundos.
-> Os dados (palpites e usuários) persistem entre hibernações, mas são perdidos
-> em caso de redeploy. **Evite fazer redeploy durante a Copa.**
+> **Plano gratuito:** o servidor hiberna após 15 minutos sem acesso. O primeiro acesso
+> após a hibernação pode demorar ~30 segundos. Os dados persistem no Firestore
+> independentemente de hibernações ou redeploys.
+
+### 3. Baixar backup dos dados
+
+Use o script PowerShell para baixar uma cópia local dos dados do servidor:
+
+```powershell
+.\baixar-dados.ps1 -Servidor https://copa-2026.onrender.com
+```
+
+O script lê as credenciais do `.env` local, faz login no servidor e salva
+`users.json` e `palpites.json` na pasta `dados/`.
 
 ---
 
@@ -157,15 +205,18 @@ Após o deploy, o Render fornece uma URL pública (ex: `https://copa-2026.onrend
 | `POST` | `/api/auth/login` | Público | Login |
 | `POST` | `/api/auth/logout` | Logado | Logout |
 | `GET` | `/api/auth/me` | Logado | Dados do usuário atual |
+| `POST` | `/api/auth/change-password` | Logado | Altera a própria senha |
 | `GET` | `/api/users` | Admin | Lista jogadores |
 | `POST` | `/api/users` | Admin | Cria jogador |
 | `DELETE` | `/api/users/:username` | Admin | Remove jogador |
-| `GET` | `/api/csv` | Logado | Retorna dados dos jogos |
-| `POST` | `/api/csv` | Admin | Salva resultados |
+| `POST` | `/api/users/:username/reset-password` | Admin | Redefine senha de um jogador |
+| `GET` | `/api/csv` | Logado | Retorna rodadas (CSV) do Firestore |
+| `POST` | `/api/csv` | Admin | Salva/atualiza uma rodada |
 | `GET` | `/api/palpites/me` | Logado | Palpites do usuário atual |
 | `POST` | `/api/palpites` | Logado | Salva palpites |
 | `GET` | `/api/palpites/all` | Logado | Todos os palpites |
 | `GET` | `/api/bolao` | Logado | Classificação do bolão |
+| `GET` | `/api/admin/dados/:file` | Admin | Download de `users.json` ou `palpites.json` |
 
 ---
 
@@ -173,5 +224,5 @@ Após o deploy, o Render fornece uma URL pública (ex: `https://copa-2026.onrend
 
 - **Backend:** Node.js, Express, express-session, bcryptjs, dotenv
 - **Frontend:** HTML + CSS + JavaScript puro (sem frameworks)
-- **Dados:** arquivos CSV e JSON locais
+- **Banco de dados:** Firebase Firestore
 - **Deploy:** Render (plano gratuito)
