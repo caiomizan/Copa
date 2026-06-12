@@ -509,7 +509,7 @@ function parseAllCSVs(files) {
       let p1 = (c[1] || '').trim(), p2 = (c[2] || '').trim();
       if (/^\d+x\d+$/i.test(p1)) { [p1, p2] = p1.split(/x/i); }
       S.matches.push({
-        id: id++, filename,
+        id: String(++id).padStart(3, '0'), filename,
         sel1: c[0]?.trim(), p1: p1 === '' ? '' : +p1, p2: p2 === '' ? '' : +p2,
         sel2: c[3]?.trim(), dia: c[6]?.trim(), hora: c[7]?.trim(), grupo: c[8]?.trim(),
       });

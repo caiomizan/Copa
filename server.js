@@ -1,4 +1,5 @@
 require('dotenv').config();
+process.env.TZ = 'America/Sao_Paulo';
 const express = require('express');
 const session = require('express-session');
 const bcrypt  = require('bcryptjs');
@@ -182,7 +183,7 @@ app.post('/api/palpites', needAuth, async (req, res) => {
       const cols = line.split(',');
       const [d, mo] = (cols[6] || '').split('/').map(Number);
       const [h, mi] = (cols[7] || '').split(':').map(Number);
-      locks[String(i)] = new Date(2026, mo - 1, d, h, mi);
+      locks[String(i + 1).padStart(3, '0')] = new Date(2026, mo - 1, d, h, mi);
     });
   } catch {}
 
@@ -208,7 +209,7 @@ app.get('/api/bolao', needAuth, async (req, res) => {
     const cols = line.split(',');
     let p1 = (cols[1] || '').trim(), p2 = (cols[2] || '').trim();
     if (/^\d+x\d+$/i.test(p1)) { [p1, p2] = p1.split(/x/i); }
-    if (p1 !== '' && p2 !== '') results[String(i)] = { p1: +p1, p2: +p2 };
+    if (p1 !== '' && p2 !== '') results[String(i + 1).padStart(3, '0')] = { p1: +p1, p2: +p2 };
   });
 
   const sig = v => v.p1 > v.p2 ? 1 : v.p1 < v.p2 ? -1 : 0;
