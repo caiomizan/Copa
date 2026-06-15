@@ -176,7 +176,16 @@
     .btn-save-pal:hover { opacity: .85; }
     .day-header { font-size: .72rem; font-weight: 700; color: var(--muted); text-transform: uppercase;
       letter-spacing: .1em; padding: .4rem 0 .5rem; margin-top: .75rem; border-bottom: 1px solid var(--border);
-      margin-bottom: .5rem; }
+      margin-bottom: .5rem; cursor: pointer; user-select: none;
+      display: flex; align-items: center; justify-content: space-between; }
+    .day-header:hover { color: var(--text); }
+    .day-toggle { font-size: .65rem; opacity: .6; }
+    .day-cards.collapsed { display: none; }
+    .pal-rodada-tabs { display: flex; gap: .4rem; flex-wrap: wrap; margin-bottom: .75rem; }
+    .pal-rodada-tab { padding: .28rem .75rem; border-radius: 20px; font-size: .78rem; font-weight: 600;
+      background: var(--card); border: 1px solid var(--border); color: var(--muted); cursor: pointer; }
+    .pal-rodada-tab:hover { color: var(--text); }
+    .pal-rodada-tab.active { background: var(--accent); color: #000; border-color: var(--accent); }
     .pal-card {
       background: var(--card); border: 1px solid var(--border); border-radius: 8px;
       margin-bottom: .5rem; padding: .7rem 1rem;
@@ -416,6 +425,7 @@ const S = {
   user: null, matches: [], csvFiles: [],
   myPals: {}, pending: {}, bolao: [],
   activeGroup: null, activeTab: 'grupos',
+  palRodada: null, palDayOpen: {},
 };
 
 /* ── API ──────────────────────────────────────────── */
@@ -735,24 +745,57 @@ function renderLeaderboard() {
 
 function renderMyPalpites() {
   const el = document.getElementById('b-palpites');
+
+  // Filtra por rodada selecionada
+  const matches = S.palRodada
+    ? S.matches.filter(m => m.filename === S.palRodada)
+    : S.matches;
+
+  // Agrupa por dia
   const byDay = {};
-  S.matches.forEach(m => { if (!byDay[m.dia]) byDay[m.dia] = []; byDay[m.dia].push(m); });
+  matches.forEach(m => { if (!byDay[m.dia]) byDay[m.dia] = []; byDay[m.dia].push(m); });
+
+  // Ordena dias
   const days = Object.keys(byDay).sort((a, b) => {
     const parse = d => { const [dd, mm] = d.split('/'); return +mm * 100 + +dd; };
     return parse(a) - parse(b);
   });
 
+  // Ordena jogos dentro de cada dia por horário
+  const toMin = h => { const [hh, mm] = (h || '00:00').split(':').map(Number); return hh * 60 + mm; };
+  days.forEach(day => byDay[day].sort((a, b) => toMin(a.hora) - toMin(b.hora)));
+
+  // Tabs de rodadas (só aparece quando há mais de uma)
+  const rodadas = [...new Set(S.matches.map(m => m.filename))];
+  let tabsHtml = '';
+  if (rodadas.length > 1) {
+    tabsHtml = `<div class="pal-rodada-tabs">
+      <button class="pal-rodada-tab${!S.palRodada ? ' active' : ''}" onclick="setPalRodada(null)">Todas</button>
+      ${rodadas.map(fn => `<button class="pal-rodada-tab${S.palRodada === fn ? ' active' : ''}" onclick="setPalRodada('${fn.replace(/'/g, "\\'")}')">${getRodada(fn)}</button>`).join('')}
+    </div>`;
+  }
+
   let html = `<div class="pal-header">
     <div class="sec-title" style="margin:0">Meus Palpites</div>
     <button class="btn-save-pal" onclick="savePalpites()">💾 Salvar Palpites</button>
-  </div>`;
+  </div>${tabsHtml}`;
 
   for (const day of days) {
-    html += `<div class="day-header">📅 ${day}</div>`;
+    const allLocked = byDay[day].every(m => isLocked(m));
+    // Dias passados fecham por padrão; toggle do usuário tem prioridade
+    const isOpen = S.palDayOpen[day] !== undefined ? S.palDayOpen[day] : !allLocked;
+
+    html += `
+      <div class="day-header" onclick="togglePalDay('${day}')">
+        <span>📅 ${day}</span>
+        <span class="day-toggle">${isOpen ? '▲' : '▼'}</span>
+      </div>
+      <div class="day-cards${isOpen ? '' : ' collapsed'}" data-day="${day}">`;
+
     for (const m of byDay[day]) {
-      const locked  = isLocked(m);
-      const played  = typeof m.p1 === 'number' && typeof m.p2 === 'number';
-      const pal     = S.pending[String(m.id)] || {};
+      const locked = isLocked(m);
+      const played = typeof m.p1 === 'number' && typeof m.p2 === 'number';
+      const pal    = S.pending[String(m.id)] || {};
       const pv1 = pal.p1 !== undefined ? pal.p1 : '';
       const pv2 = pal.p2 !== undefined ? pal.p2 : '';
       let resultHtml = '';
@@ -779,6 +822,8 @@ function renderMyPalpites() {
           </span>
         </div>`;
     }
+
+    html += `</div>`;
   }
 
   el.innerHTML = html;
@@ -791,6 +836,21 @@ function renderMyPalpites() {
       else S.pending[id][side] = Math.max(0, +val || 0);
     });
   });
+}
+
+function togglePalDay(day) {
+  const cards = document.querySelector(`.day-cards[data-day="${day}"]`);
+  if (!cards) return;
+  const nowCollapsed = cards.classList.toggle('collapsed');
+  S.palDayOpen[day] = !nowCollapsed;
+  const arrow = cards.previousElementSibling?.querySelector('.day-toggle');
+  if (arrow) arrow.textContent = nowCollapsed ? '▼' : '▲';
+}
+
+function setPalRodada(fn) {
+  S.palRodada = fn;
+  S.palDayOpen = {};
+  renderMyPalpites();
 }
 
 function scorePal(pal, m) {
