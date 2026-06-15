@@ -170,6 +170,24 @@
       padding: .1rem .4rem; border-radius: 8px; margin-left: .35rem; font-weight: 700; }
     .empty { color: var(--muted); font-size: .875rem; padding: 1.5rem; text-align: center; }
 
+    /* ── Último Jogo ── */
+    .uj-match-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+      padding: 1.25rem; text-align: center; margin-bottom: 1.25rem; }
+    .uj-teams { font-size: 1.1rem; font-weight: 700; margin-bottom: .4rem; }
+    .uj-vs { color: var(--muted); margin: 0 .5rem; }
+    .uj-meta { font-size: .8rem; color: var(--muted); margin-bottom: .5rem; }
+    .uj-result { font-size: .9rem; }
+    .uj-pending { font-size: .85rem; color: var(--muted); font-style: italic; }
+    .uj-table { width: 100%; border-collapse: collapse; margin-top: .25rem; }
+    .uj-table th { font-size: .72rem; font-weight: 700; color: var(--muted); text-transform: uppercase;
+      letter-spacing: .06em; padding: .4rem .6rem; border-bottom: 1px solid var(--border); text-align: left; }
+    .uj-table td { padding: .55rem .6rem; border-bottom: 1px solid rgba(255,255,255,.04); vertical-align: middle; }
+    .uj-table tr:last-child td { border-bottom: none; }
+    .uj-table tr.me td { background: rgba(201,162,39,.07); }
+    .uj-user { font-weight: 600; }
+    .uj-score { text-align: center; font-weight: 700; font-size: 1rem; width: 2.5rem; }
+    .uj-x { text-align: center; color: var(--muted); width: 1.5rem; }
+
     /* ── Palpites ── */
     .pal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
     .btn-save-pal { background: var(--accent); color: #000; padding: .5rem 1.1rem; font-size: .85rem; border-radius: 6px; }
@@ -325,9 +343,11 @@
   </header>
 
   <nav class="tabs">
-    <button class="tab-btn active" data-tab="grupos" onclick="setTab('grupos')">Grupos</button>
-    <button class="tab-btn"        data-tab="bolao"  onclick="setTab('bolao')">Bolão</button>
-    <button class="tab-btn"        data-tab="lista"  onclick="setTab('lista')">📋 Lista</button>
+    <button class="tab-btn active" data-tab="grupos"        onclick="setTab('grupos')">Grupos</button>
+    <button class="tab-btn"        data-tab="palpites"     onclick="setTab('palpites')">Palpites</button>
+    <button class="tab-btn"        data-tab="ultimojogo"   onclick="setTab('ultimojogo')">Último Jogo</button>
+    <button class="tab-btn"        data-tab="classificacao" onclick="setTab('classificacao')">Classificação</button>
+    <button class="tab-btn"        data-tab="lista"        onclick="setTab('lista')">📋 Lista</button>
   </nav>
 
   <section id="s-grupos">
@@ -337,11 +357,16 @@
     </div>
   </section>
 
-  <section id="s-bolao" hidden>
-    <div class="inner">
-      <div id="b-leaderboard"></div>
-      <div id="b-palpites"></div>
-    </div>
+  <section id="s-palpites" hidden>
+    <div class="inner"><div id="p-palpites"></div></div>
+  </section>
+
+  <section id="s-ultimojogo" hidden>
+    <div class="inner" id="uj-inner"><div class="spinner"></div></div>
+  </section>
+
+  <section id="s-classificacao" hidden>
+    <div class="inner"><div id="c-leaderboard"></div></div>
   </section>
 
   <section id="s-lista" hidden>
@@ -426,7 +451,7 @@ const S = {
   user: null, matches: [], csvFiles: [],
   myPals: {}, pending: {}, bolao: [],
   activeGroup: null, activeTab: 'grupos',
-  palRodada: null, palDayOpen: {},
+  palRodada: null, palDayOpen: {}, allPals: {},
 };
 
 /* ── API ──────────────────────────────────────────── */
@@ -456,15 +481,17 @@ async function init() {
 }
 
 async function loadAll() {
-  const [csvFiles, myPals, bolao] = await Promise.all([
+  const [csvFiles, myPals, bolao, allPals] = await Promise.all([
     api('GET', '/api/csv'),
     api('GET', '/api/palpites/me'),
     api('GET', '/api/bolao'),
+    api('GET', '/api/palpites/all'),
   ]);
   parseAllCSVs(csvFiles);
   S.myPals  = myPals  || {};
   S.pending = JSON.parse(JSON.stringify(S.myPals));
   S.bolao   = bolao   || [];
+  S.allPals = allPals || {};
 }
 
 /* ── Auth ─────────────────────────────────────────── */
@@ -555,8 +582,10 @@ async function saveCSV() {
     for (const fn of filenames) {
       await api('POST', '/api/csv', { filename: fn, text: generateCSV(fn) });
     }
-    S.bolao = await api('GET', '/api/bolao');
-    if (S.activeTab === 'bolao') renderLeaderboard();
+    S.bolao   = await api('GET', '/api/bolao');
+    S.allPals = await api('GET', '/api/palpites/all');
+    if (S.activeTab === 'classificacao') renderLeaderboard();
+    if (S.activeTab === 'ultimojogo')    renderUltimoJogo();
     toast('Resultados salvos! ✓', 'ok');
   } catch (e) { toast(e.message, 'err'); }
 }
@@ -576,13 +605,17 @@ let lockTimer = null;
 function setTab(tab) {
   S.activeTab = tab;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  document.getElementById('s-grupos').hidden = tab !== 'grupos';
-  document.getElementById('s-bolao').hidden  = tab !== 'bolao';
-  document.getElementById('s-lista').hidden  = tab !== 'lista';
+  document.getElementById('s-grupos').hidden        = tab !== 'grupos';
+  document.getElementById('s-palpites').hidden      = tab !== 'palpites';
+  document.getElementById('s-ultimojogo').hidden    = tab !== 'ultimojogo';
+  document.getElementById('s-classificacao').hidden = tab !== 'classificacao';
+  document.getElementById('s-lista').hidden         = tab !== 'lista';
   clearInterval(lockTimer);
-  if (tab === 'grupos') renderGrupos();
-  if (tab === 'bolao')  { renderBolao(); lockTimer = setInterval(renderMyPalpites, 30000); }
-  if (tab === 'lista')  renderLista();
+  if (tab === 'grupos')        renderGrupos();
+  if (tab === 'palpites')      { renderMyPalpites(); lockTimer = setInterval(renderMyPalpites, 30000); }
+  if (tab === 'ultimojogo')    renderUltimoJogo();
+  if (tab === 'classificacao') renderLeaderboard();
+  if (tab === 'lista')         renderLista();
 }
 
 /* ── Grupos ───────────────────────────────────────── */
@@ -716,11 +749,9 @@ function refreshBadge(m) {
   });
 }
 
-/* ── Bolão ────────────────────────────────────────── */
-function renderBolao() { renderLeaderboard(); renderMyPalpites(); }
-
+/* ── Classificação ───────────────────────────────── */
 function renderLeaderboard() {
-  const el = document.getElementById('b-leaderboard');
+  const el = document.getElementById('c-leaderboard');
   if (!S.bolao.length) {
     el.innerHTML = '<div class="sec-title">Classificação</div><p class="empty">Nenhum palpite registrado ainda.</p>';
     return;
@@ -744,8 +775,63 @@ function renderLeaderboard() {
     </div>`;
 }
 
+/* ── Último Jogo ─────────────────────────────────── */
+function renderUltimoJogo() {
+  const el = document.getElementById('uj-inner');
+
+  const locked = S.matches.filter(m => isLocked(m));
+  if (!locked.length) {
+    el.innerHTML = '<p class="empty" style="padding:2rem 0;text-align:center">Nenhum jogo iniciado ainda.</p>';
+    return;
+  }
+
+  // Jogo mais recentemente travado
+  locked.sort((a, b) => matchDT(b) - matchDT(a));
+  const m = locked[0];
+
+  const played = typeof m.p1 === 'number' && typeof m.p2 === 'number';
+
+  const rows = Object.entries(S.allPals)
+    .map(([username, pals]) => ({ username, pal: pals[m.id] }))
+    .filter(r => r.pal !== undefined && r.pal.p1 !== undefined && r.pal.p2 !== undefined)
+    .sort((a, b) => a.username.localeCompare(b.username));
+
+  const resultHtml = played
+    ? `<span class="uj-result">Resultado oficial: <strong>${m.p1} × ${m.p2}</strong></span>`
+    : '<span class="uj-pending">Aguardando resultado…</span>';
+
+  const tableRows = rows.length
+    ? rows.map(({ username, pal }) => {
+        const pts = played ? scorePal(pal, m) : null;
+        const badge = pts !== null
+          ? `<span class="pts-badge pts-${pts}">${pts === 3 ? '✅ +3' : pts === 1 ? '〇 +1' : '✗ 0'}</span>`
+          : '—';
+        const isMe = username === S.user.username;
+        return `<tr class="${isMe ? 'me' : ''}">
+          <td class="uj-user">${username}${isMe ? '<span class="you-badge">você</span>' : ''}</td>
+          <td class="uj-score">${pal.p1}</td>
+          <td class="uj-x">×</td>
+          <td class="uj-score">${pal.p2}</td>
+          <td style="text-align:center">${badge}</td>
+        </tr>`;
+      }).join('')
+    : `<tr><td colspan="5" style="text-align:center;padding:1.5rem;color:var(--muted)">Nenhum palpite registrado para este jogo.</td></tr>`;
+
+  el.innerHTML = `
+    <div class="uj-match-card">
+      <div class="uj-teams">${m.sel1} <span class="uj-vs">×</span> ${m.sel2}</div>
+      <div class="uj-meta">📅 ${m.dia} · ⏰ ${m.hora}</div>
+      ${resultHtml}
+    </div>
+    <table class="uj-table">
+      <thead><tr><th>Jogador</th><th colspan="3" style="text-align:center">Palpite</th><th style="text-align:center">Pts</th></tr></thead>
+      <tbody>${tableRows}</tbody>
+    </table>`;
+}
+
+/* ── Palpites ────────────────────────────────────── */
 function renderMyPalpites() {
-  const el = document.getElementById('b-palpites');
+  const el = document.getElementById('p-palpites');
 
   // Filtra por rodada selecionada
   const matches = S.palRodada
@@ -879,7 +965,9 @@ async function savePalpites() {
     S.myPals  = await api('GET', '/api/palpites/me');
     S.pending = JSON.parse(JSON.stringify(S.myPals));
     S.bolao   = await api('GET', '/api/bolao');
-    renderLeaderboard();
+    S.allPals = await api('GET', '/api/palpites/all');
+    if (S.activeTab === 'classificacao') renderLeaderboard();
+    if (S.activeTab === 'ultimojogo')    renderUltimoJogo();
     renderMyPalpites();
     toast('Palpites salvos! ✓', 'ok');
   } catch (e) { toast(e.message, 'err'); }
@@ -952,8 +1040,10 @@ async function deleteUser(username) {
   if (!confirm(`Remover jogador "${username}" e todos os seus palpites?`)) return;
   try {
     await api('DELETE', `/api/users/${username}`);
-    S.bolao = await api('GET', '/api/bolao');
-    if (S.activeTab === 'bolao') renderLeaderboard();
+    S.bolao   = await api('GET', '/api/bolao');
+    S.allPals = await api('GET', '/api/palpites/all');
+    if (S.activeTab === 'classificacao') renderLeaderboard();
+    if (S.activeTab === 'ultimojogo')    renderUltimoJogo();
     await refreshUserList();
     toast(`"${username}" removido.`, 'ok');
   } catch (e) { toast(e.message, 'err'); }
