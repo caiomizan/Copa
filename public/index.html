@@ -574,6 +574,13 @@ function parseAllCSVs(files) {
   });
   const groups = [...new Set(S.matches.map(m => m.grupo).filter(Boolean))];
   if (!S.activeGroup || !groups.includes(S.activeGroup)) S.activeGroup = groups[0] || null;
+
+  // Auto-detecta rodada atual para Palpites (só na primeira carga)
+  if (S.palRodada === null) {
+    const rodadas = [...new Set(S.matches.map(m => m.filename))];
+    const current = rodadas.find(fn => S.matches.some(m => m.filename === fn && m.p1 === ''));
+    S.palRodada = current || rodadas[rodadas.length - 1] || null;
+  }
 }
 
 function getRodada(filename) {
@@ -908,10 +915,10 @@ function renderUltimoJogo() {
 function renderMyPalpites() {
   const el = document.getElementById('p-palpites');
 
-  // Filtra por rodada selecionada
-  const matches = S.palRodada
-    ? S.matches.filter(m => m.filename === S.palRodada)
-    : S.matches;
+  // Filtra por rodada selecionada ('all' = todas, null = nunca deve chegar aqui)
+  const matches = (!S.palRodada || S.palRodada === 'all')
+    ? S.matches
+    : S.matches.filter(m => m.filename === S.palRodada);
 
   // Agrupa por dia
   const byDay = {};
@@ -932,7 +939,7 @@ function renderMyPalpites() {
   let tabsHtml = '';
   if (rodadas.length > 1) {
     tabsHtml = `<div class="pal-rodada-tabs">
-      <button class="pal-rodada-tab${!S.palRodada ? ' active' : ''}" onclick="setPalRodada(null)">Todas</button>
+      <button class="pal-rodada-tab${S.palRodada === 'all' ? ' active' : ''}" onclick="setPalRodada('all')">Todas</button>
       ${rodadas.map(fn => `<button class="pal-rodada-tab${S.palRodada === fn ? ' active' : ''}" onclick="setPalRodada('${fn.replace(/'/g, "\\'")}')">${getRodada(fn)}</button>`).join('')}
     </div>`;
   }
