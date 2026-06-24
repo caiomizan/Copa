@@ -292,7 +292,7 @@
     .lista-row {
       background: var(--card); border: 1px solid var(--border); border-radius: 8px;
       margin-bottom: .35rem; padding: .5rem .9rem;
-      display: grid; grid-template-columns: 68px 1fr auto 1fr auto;
+      display: grid; grid-template-columns: 68px 1fr auto 1fr 100px;
       align-items: center; gap: .5rem; transition: border-color .2s;
     }
     .lista-row:hover { border-color: #2e4a70; }
@@ -315,7 +315,7 @@
       background: #09131f; border-radius: 6px; border: 2px solid var(--border);
     }
     .lista-score-disp.pending { color: var(--muted); font-size: .82rem; }
-    .lista-badge { min-width: 80px; text-align: right; }
+    .lista-badge { text-align: right; overflow: hidden; }
   </style>
 </head>
 <body>
