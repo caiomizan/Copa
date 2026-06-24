@@ -84,6 +84,19 @@
     .pill:hover { color: var(--text); border-color: var(--muted); }
     .pill.active { background: var(--accent); color: #000; border-color: var(--accent); }
 
+    /* ── Subabas de rodada por grupo ── */
+    .grupo-rodada-tabs {
+      display: flex; gap: .4rem; flex-wrap: wrap;
+      margin: 1.25rem 0 .85rem;
+    }
+    .grupo-rodada-tab {
+      padding: .3rem .85rem; border-radius: 16px;
+      border: 1px solid var(--border); background: transparent;
+      color: var(--muted); font-size: .75rem; font-weight: 700; transition: all .15s; cursor: pointer;
+    }
+    .grupo-rodada-tab:hover { color: var(--text); border-color: var(--muted); }
+    .grupo-rodada-tab.active { background: var(--accent); color: #000; border-color: var(--accent); }
+
     /* ── Inner content ── */
     .inner { padding: 1.5rem; max-width: 860px; margin: 0 auto; }
     .sec-title {
@@ -451,7 +464,7 @@
 const S = {
   user: null, matches: [], csvFiles: [],
   myPals: {}, pending: {}, bolao: [],
-  activeGroup: null, activeTab: 'grupos',
+  activeGroup: null, activeTab: 'grupos', activeGrupoRodada: null,
   palRodada: null, palDayOpen: {}, allPals: {},
 };
 
@@ -620,6 +633,23 @@ function setTab(tab) {
 }
 
 /* ── Grupos ───────────────────────────────────────── */
+function currentRodadaForGroup(gMatches) {
+  // Rodadas ordenadas numericamente
+  const rodadaFilenames = [...new Map(gMatches.map(m => [m.filename, m])).keys()]
+    .sort((a, b) => {
+      const na = parseInt((a.match(/\d+/) || [0])[0]);
+      const nb = parseInt((b.match(/\d+/) || [0])[0]);
+      return na - nb;
+    });
+  // Primeira rodada com jogo ainda não jogado (ou futura)
+  for (const fn of rodadaFilenames) {
+    const hasUnplayed = gMatches.some(m => m.filename === fn && m.p1 === '');
+    if (hasUnplayed) return fn;
+  }
+  // Todas jogadas: retorna a última
+  return rodadaFilenames[rodadaFilenames.length - 1] || null;
+}
+
 function renderGrupos() {
   // Pills
   const groups = [...new Set(S.matches.map(m => m.grupo).filter(Boolean))];
@@ -628,18 +658,30 @@ function renderGrupos() {
   groups.forEach(g => {
     const b = document.createElement('button');
     b.className = 'pill' + (g === S.activeGroup ? ' active' : '');
-    b.textContent = g; b.onclick = () => { S.activeGroup = g; renderGrupos(); };
+    b.textContent = g; b.onclick = () => { S.activeGroup = g; S.activeGrupoRodada = null; renderGrupos(); };
     pills.appendChild(b);
   });
 
-  // Inner content
   const inner = document.getElementById('s-inner');
-  const rows = calcStandings(S.activeGroup);
-  const gMatches = S.matches.filter(m => m.grupo === S.activeGroup);
-
   inner.innerHTML = '';
 
+  const gMatches = S.matches.filter(m => m.grupo === S.activeGroup);
+
+  // Rodadas únicas ordenadas
+  const rodadaFilenames = [...new Map(gMatches.map(m => [m.filename, m])).keys()]
+    .sort((a, b) => {
+      const na = parseInt((a.match(/\d+/) || [0])[0]);
+      const nb = parseInt((b.match(/\d+/) || [0])[0]);
+      return na - nb;
+    });
+
+  // Determina a rodada ativa (auto-detect se não definida)
+  if (!S.activeGrupoRodada || !rodadaFilenames.includes(S.activeGrupoRodada)) {
+    S.activeGrupoRodada = currentRodadaForGroup(gMatches);
+  }
+
   // Standings
+  const rows = calcStandings(S.activeGroup);
   const sw = document.createElement('div');
   sw.className = 'standings-wrap';
   sw.innerHTML = `
@@ -661,14 +703,23 @@ function renderGrupos() {
     </table>`;
   inner.appendChild(sw);
 
-  // Matches title
-  const mt = document.createElement('div');
-  mt.className = 'sec-title'; mt.style.marginTop = '1.5rem';
-  const rodadas = [...new Set(gMatches.map(m => getRodada(m.filename)))].join(', ');
-  mt.textContent = `Jogos — ${rodadas}`;
-  inner.appendChild(mt);
+  // Sub-abas de rodada
+  if (rodadaFilenames.length > 1) {
+    const tabsWrap = document.createElement('div');
+    tabsWrap.className = 'grupo-rodada-tabs';
+    rodadaFilenames.forEach(fn => {
+      const b = document.createElement('button');
+      b.className = 'grupo-rodada-tab' + (fn === S.activeGrupoRodada ? ' active' : '');
+      b.textContent = getRodada(fn);
+      b.onclick = () => { S.activeGrupoRodada = fn; renderGrupos(); };
+      tabsWrap.appendChild(b);
+    });
+    inner.appendChild(tabsWrap);
+  }
 
-  gMatches.forEach(m => inner.appendChild(buildMatchCard(m)));
+  // Jogos da rodada ativa
+  const visibleMatches = gMatches.filter(m => m.filename === S.activeGrupoRodada);
+  visibleMatches.forEach(m => inner.appendChild(buildMatchCard(m)));
 
   if (S.user.isAdmin) {
     const btn = document.createElement('button');
