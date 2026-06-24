@@ -223,6 +223,7 @@
     .pal-input:disabled { opacity: .5; cursor: not-allowed; }
     .pal-sep { color: var(--muted); font-weight: 700; font-size: .9rem; }
     .pal-meta { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; font-size: .72rem; color: var(--muted); }
+    .pal-id { font-weight: 700; color: var(--accent); letter-spacing: .03em; }
     .pts-badge { font-size: .7rem; font-weight: 700; padding: .15rem .4rem; border-radius: 8px; }
     .pts-3 { background: rgba(46,204,113,.2); color: var(--win); }
     .pts-1 { background: rgba(243,156,18,.2); color: var(--draw); }
@@ -903,6 +904,7 @@ function renderMyPalpites() {
           </div>
           <span class="pal-team">${m.sel2}</span>
           <span class="pal-meta">
+            <span class="pal-id">#${m.id} · ${m.grupo || ''} · ${getRodada(m.filename)}</span>
             ⏰ ${m.hora}${locked ? ' 🔒' : ''}
             ${played ? `<span class="actual">${m.p1}×${m.p2}</span>` : ''}
             ${resultHtml}
