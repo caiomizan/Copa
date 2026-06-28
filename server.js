@@ -255,35 +255,6 @@ server.on('error', err => {
 async function startup() {
   console.log('\n⚽  Copa 2026 Bolão — iniciando...');
 
-  // ── Corrige nomes antigos de rodadas knockout (executa enquanto docs errados existirem)
-  const OLD_KNOCKOUT = [
-    'Copa 2026 - 16-avos de final.csv',
-    'Copa 2026 - Final.csv',
-    'Copa 2026 - Oitavas de final.csv',
-    'Copa 2026 - Quartas de final.csv',
-    'Copa 2026 - Semifinais.csv',
-    'Copa 2026 - Terceiro lugar.csv',
-  ];
-  const oldSnaps = await Promise.all(OLD_KNOCKOUT.map(n => db.collection('rodadas').doc(n).get()));
-  if (oldSnaps.some(s => s.exists)) {
-    console.log('  Corrigindo rodadas knockout com nomes antigos...');
-    for (let i = 0; i < OLD_KNOCKOUT.length; i++) {
-      if (oldSnaps[i].exists) {
-        await db.collection('rodadas').doc(OLD_KNOCKOUT[i]).delete();
-        console.log(`    Removido: ${OLD_KNOCKOUT[i]}`);
-      }
-    }
-    const backupPath = path.join(__dirname, 'dados', 'palpites.json');
-    if (fs.existsSync(backupPath)) {
-      console.log('  Restaurando palpites do backup...');
-      const backup = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
-      for (const [username, dados] of Object.entries(backup)) {
-        await db.collection('palpites').doc(username).set({ dados });
-        console.log(`    Restaurado: ${username}`);
-      }
-    }
-  }
-
   // Migra CSVs locais para o Firestore (aditivo: só adiciona os que ainda não existem)
   const localDir = path.join(__dirname, 'dados');
   try {
