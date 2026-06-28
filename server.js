@@ -255,19 +255,20 @@ server.on('error', err => {
 async function startup() {
   console.log('\n⚽  Copa 2026 Bolão — iniciando...');
 
-  // Migra CSVs locais para o Firestore na primeira execução
-  const rodadasSnap = await db.collection('rodadas').limit(1).get();
-  if (rodadasSnap.empty) {
-    const localDir = path.join(__dirname, 'dados');
-    try {
-      const csvFiles = fs.readdirSync(localDir).filter(f => /\.csv$/i.test(f)).sort();
-      for (const f of csvFiles) {
+  // Migra CSVs locais para o Firestore (aditivo: só adiciona os que ainda não existem)
+  const localDir = path.join(__dirname, 'dados');
+  try {
+    const csvFiles = fs.readdirSync(localDir).filter(f => /\.csv$/i.test(f)).sort();
+    for (const f of csvFiles) {
+      const ref = db.collection('rodadas').doc(f);
+      const snap = await ref.get();
+      if (!snap.exists) {
         const text = fs.readFileSync(path.join(localDir, f), 'utf8');
-        await db.collection('rodadas').doc(f).set({ filename: f, text });
+        await ref.set({ filename: f, text });
         console.log(`  Rodada migrada: ${f}`);
       }
-    } catch { /* sem CSVs locais para migrar */ }
-  }
+    }
+  } catch { /* sem CSVs locais para migrar */ }
 
   // Auto-cria admin
   const adminPass = process.env.ADMIN_PASSWORD;
