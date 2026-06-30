@@ -318,6 +318,14 @@
     .lista-badge { grid-column: 1 / -1; text-align: center; }
 
     /* ── Chaveamento ── */
+    .pen-row { display: none; align-items: center; gap: .3rem; margin-top: .3rem; flex-wrap: wrap; justify-content: center; }
+    .pen-label { font-size: .6rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+    .pen-btn { font-size: .62rem; padding: .15rem .4rem; border-radius: 4px; border: 1px solid var(--border);
+               background: var(--card); color: var(--text); cursor: pointer; white-space: nowrap; max-width: 90px;
+               overflow: hidden; text-overflow: ellipsis; }
+    .pen-btn.pen-active { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; }
+    .pen-btn:hover:not(.pen-active) { border-color: var(--accent); }
+
     .bround { display: flex; flex-direction: column; flex-shrink: 0; width: 162px; }
     .bround-title {
       font-size: .62rem; font-weight: 700; text-transform: uppercase;
@@ -336,7 +344,8 @@
     .bscr  { font-size: .72rem; font-weight: 700; text-align: center; color: var(--text);
              border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
              margin: .18rem 0; padding: .1rem 0; }
-    .bscr-p { color: var(--muted); font-weight: 400; font-size: .64rem; }
+    .bscr-p   { color: var(--muted); font-weight: 400; font-size: .64rem; }
+    .bscr-pen { font-size: .58rem; font-weight: 400; color: var(--muted); }
     .bdt   { font-size: .58rem; color: var(--muted); text-align: center; margin-top: .1rem; }
   </style>
 </head>
@@ -592,10 +601,13 @@ function parseAllCSVs(files) {
       const c = line.split(',');
       let p1 = (c[1] || '').trim(), p2 = (c[2] || '').trim();
       if (/^\d+x\d+$/i.test(p1)) { [p1, p2] = p1.split(/x/i); }
+      const penW = (p1 !== '' && p2 !== '' && +p1 === +p2 && c[4]?.trim() && c[4]?.trim() !== 'Empate')
+        ? c[4].trim() : '';
       S.matches.push({
         id: String(++id).padStart(3, '0'), filename,
         sel1: c[0]?.trim(), p1: p1 === '' ? '' : +p1, p2: p2 === '' ? '' : +p2,
-        sel2: c[3]?.trim(), dia: c[6]?.trim(), hora: c[7]?.trim(), grupo: c[8]?.trim(),
+        sel2: c[3]?.trim(), penWinner: penW,
+        dia: c[6]?.trim(), hora: c[7]?.trim(), grupo: c[8]?.trim(),
       });
     });
   });
@@ -622,7 +634,7 @@ function generateCSV(filename) {
   const rows = S.matches.filter(m => m.filename === filename).map(m => {
     const p1 = typeof m.p1 === 'number' ? m.p1 : '';
     const p2 = typeof m.p2 === 'number' ? m.p2 : '';
-    const venc  = p1 !== '' && p2 !== '' ? (+p1 > +p2 ? m.sel1 : +p2 > +p1 ? m.sel2 : 'Empate') : '';
+    const venc  = p1 !== '' && p2 !== '' ? (+p1 > +p2 ? m.sel1 : +p2 > +p1 ? m.sel2 : (m.penWinner || 'Empate')) : '';
     const saldo = p1 !== '' && p2 !== '' ? String(+p1 - +p2) : '';
     return [m.sel1, p1, p2, m.sel2, venc, saldo, m.dia, m.hora, m.grupo].join(',');
   });
@@ -801,10 +813,20 @@ function buildMatchCard(m) {
        <span class="score-sep">×</span>
        <span class="score-display${p2v === '' ? ' pending' : ''}">${p2v !== '' ? p2v : '–'}</span>`;
 
+  const isKO = !m.grupo;
+  const penRowHTML = (S.user.isAdmin && isKO)
+    ? `<div class="pen-row" data-pen="${m.id}">
+         <span class="pen-label">Pênaltis:</span>
+         <button class="pen-btn${m.penWinner === m.sel1 ? ' pen-active' : ''}" data-pen-id="${m.id}" data-pen-sel="sel1">${m.sel1}</button>
+         <button class="pen-btn${m.penWinner === m.sel2 ? ' pen-active' : ''}" data-pen-id="${m.id}" data-pen-sel="sel2">${m.sel2}</button>
+       </div>`
+    : '';
+
   card.innerHTML = `
     <div class="team-box right"><span class="tname">${m.sel1}</span></div>
     <div class="score-center">
       <div class="score-row">${scoreHTML}</div>
+      ${penRowHTML}
     </div>
     <div class="team-box"><span class="tname">${m.sel2}</span></div>
     <div class="match-meta">
@@ -814,6 +836,7 @@ function buildMatchCard(m) {
     </div>`;
 
   refreshBadge(m);
+  refreshPenRow(m);
 
   if (S.user.isAdmin) {
     card.querySelectorAll('.score-input').forEach(inp => {
@@ -821,7 +844,18 @@ function buildMatchCard(m) {
         const match = S.matches.find(x => x.id === inp.dataset.id);
         const val = inp.value.trim();
         match[inp.dataset.side] = val === '' ? '' : Math.max(0, +val || 0);
+        if (match.penWinner) { match.penWinner = ''; }
         refreshBadge(match);
+        refreshPenRow(match);
+      });
+    });
+    card.querySelectorAll('.pen-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const match = S.matches.find(x => x.id === btn.dataset.penId);
+        match.penWinner = match[btn.dataset.penSel];
+        refreshBadge(match);
+        refreshPenRow(match);
+        saveCSV();
       });
     });
   }
@@ -831,15 +865,31 @@ function buildMatchCard(m) {
 function refreshBadge(m) {
   const p1 = typeof m.p1 === 'number' ? m.p1 : null;
   const p2 = typeof m.p2 === 'number' ? m.p2 : null;
-  const venc  = p1 !== null && p2 !== null ? (p1 > p2 ? m.sel1 : p2 > p1 ? m.sel2 : 'Empate') : '';
+  const isDraw = p1 !== null && p2 !== null && p1 === p2;
+  const venc = p1 !== null && p2 !== null
+    ? (p1 > p2 ? m.sel1 : p2 > p1 ? m.sel2 : (m.penWinner || 'Empate')) : '';
   const saldo = p1 !== null && p2 !== null ? p1 - p2 : null;
   document.querySelectorAll(`[data-badge="${m.id}"]`).forEach(el => {
     if (!venc) { el.className = 'badge badge-none'; el.textContent = ''; return; }
-    el.className = venc === 'Empate' ? 'badge badge-draw' : 'badge badge-win';
-    el.textContent = venc === 'Empate' ? 'Empate' : '🏆 ' + venc;
+    if (isDraw && !m.penWinner) { el.className = 'badge badge-draw'; el.textContent = 'Empate'; return; }
+    el.className = 'badge badge-win';
+    el.textContent = (isDraw ? '🥅 Pên. ' : '🏆 ') + venc;
   });
   document.querySelectorAll(`[data-saldo="${m.id}"]`).forEach(el => {
     el.textContent = saldo !== null ? 'Saldo: ' + (saldo > 0 ? '+' + saldo : saldo) : '';
+  });
+}
+
+function refreshPenRow(m) {
+  const p1 = typeof m.p1 === 'number' ? m.p1 : null;
+  const p2 = typeof m.p2 === 'number' ? m.p2 : null;
+  const isDraw = p1 !== null && p2 !== null && p1 === p2;
+  document.querySelectorAll(`[data-pen="${m.id}"]`).forEach(row => {
+    row.style.display = isDraw ? 'flex' : 'none';
+    row.querySelectorAll('.pen-btn').forEach(btn => {
+      const sel = btn.dataset.penSel;
+      btn.classList.toggle('pen-active', m.penWinner === m[sel]);
+    });
   });
 }
 
@@ -1307,11 +1357,14 @@ function renderChaveamento() {
 
   const getWin = (m) => {
     if (!m || typeof m.p1 !== 'number' || typeof m.p2 !== 'number') return null;
-    return m.p1 > m.p2 ? m.sel1 : m.p2 > m.p1 ? m.sel2 : null;
+    if (m.p1 > m.p2) return m.sel1;
+    if (m.p2 > m.p1) return m.sel2;
+    return m.penWinner || null;
   };
   const getLose = (m) => {
     if (!m || typeof m.p1 !== 'number' || typeof m.p2 !== 'number') return null;
-    return m.p1 > m.p2 ? m.sel2 : m.p2 > m.p1 ? m.sel1 : null;
+    const w = getWin(m);
+    return w ? (w === m.sel1 ? m.sel2 : m.sel1) : null;
   };
   const resolve = (ref) => {
     if (!ref) return '?';
@@ -1335,7 +1388,8 @@ function renderChaveamento() {
     const t1 = resolve(match.sel1), t2 = resolve(match.sel2);
     const played = typeof match.p1 === 'number' && typeof match.p2 === 'number';
     const wRaw = played ? getWin(match) : null;
-    const score = played ? `${match.p1}×${match.p2}` : (match.hora || '–');
+    const isPen = played && match.p1 === match.p2 && !!match.penWinner;
+    const score = played ? `${match.p1}×${match.p2}${isPen ? ' <span class="bscr-pen">pên.</span>' : ''}` : (match.hora || '–');
     return `<div style="height:${slotH}px;display:flex;align-items:center;padding:${vpad}px 4px">
       <div class="bcard">
         <div class="bteam${wRaw===match.sel1?' bwin':wRaw?' blose':''}">${t1}</div>
