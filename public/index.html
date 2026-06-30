@@ -506,7 +506,7 @@ const S = {
   user: null, matches: [], csvFiles: [],
   myPals: {}, pending: {}, bolao: [],
   activeGroup: null, activeTab: 'grupos', activeGrupoRodada: null,
-  palRodada: null, palDayOpen: {}, allPals: {},
+  palRodada: null, palDayOpen: {}, listaDayOpen: {}, allPals: {},
 };
 
 /* ── API ──────────────────────────────────────────── */
@@ -814,8 +814,9 @@ function buildMatchCard(m) {
        <span class="score-display${p2v === '' ? ' pending' : ''}">${p2v !== '' ? p2v : '–'}</span>`;
 
   const isKO = !m.grupo;
+  const isDraw0 = typeof m.p1 === 'number' && typeof m.p2 === 'number' && m.p1 === m.p2;
   const penRowHTML = (S.user.isAdmin && isKO)
-    ? `<div class="pen-row" data-pen="${m.id}">
+    ? `<div class="pen-row" data-pen="${m.id}" style="display:${isDraw0 ? 'flex' : 'none'}">
          <span class="pen-label">Pênaltis:</span>
          <button class="pen-btn${m.penWinner === m.sel1 ? ' pen-active' : ''}" data-pen-id="${m.id}" data-pen-sel="sel1">${m.sel1}</button>
          <button class="pen-btn${m.penWinner === m.sel2 ? ' pen-active' : ''}" data-pen-id="${m.id}" data-pen-sel="sel2">${m.sel2}</button>
@@ -836,7 +837,6 @@ function buildMatchCard(m) {
     </div>`;
 
   refreshBadge(m);
-  refreshPenRow(m);
 
   if (S.user.isAdmin) {
     card.querySelectorAll('.score-input').forEach(inp => {
@@ -1287,10 +1287,20 @@ function renderLista() {
 
   let html = '';
   for (const day of days) {
-    html += `<div class="day-header">📅 ${day}</div>`;
+    const allPlayed = byDay[day].every(m => typeof m.p1 === 'number' && typeof m.p2 === 'number');
+    const isOpen = S.listaDayOpen[day] !== undefined ? S.listaDayOpen[day] : !allPlayed;
+    html += `
+      <div class="day-header" onclick="toggleListaDay('${day}')">
+        <span>📅 ${day}</span>
+        <span class="day-toggle">${isOpen ? '▲' : '▼'}</span>
+      </div>
+      <div class="day-cards${isOpen ? '' : ' collapsed'}" data-lista-day="${day}">`;
+
     for (const m of byDay[day]) {
       const p1v = typeof m.p1 === 'number' ? m.p1 : '';
       const p2v = typeof m.p2 === 'number' ? m.p2 : '';
+      const isKO = !m.grupo;
+      const isDraw = p1v !== '' && p2v !== '' && +p1v === +p2v;
       const scoreHTML = S.user.isAdmin
         ? `<input class="lista-score-inp" type="number" min="0" max="99" value="${p1v}"
                data-id="${m.id}" data-side="p1" placeholder="–">
@@ -1300,18 +1310,27 @@ function renderLista() {
         : `<span class="lista-score-disp${p1v === '' ? ' pending' : ''}">${p1v !== '' ? p1v : '–'}</span>
            <span class="score-sep">×</span>
            <span class="lista-score-disp${p2v === '' ? ' pending' : ''}">${p2v !== '' ? p2v : '–'}</span>`;
+      const penHTML = (S.user.isAdmin && isKO)
+        ? `<div class="pen-row" data-pen="${m.id}" style="display:${isDraw ? 'flex' : 'none'}">
+             <span class="pen-label">Pênaltis:</span>
+             <button class="pen-btn${m.penWinner === m.sel1 ? ' pen-active' : ''}" data-pen-id="${m.id}" data-pen-sel="sel1">${m.sel1}</button>
+             <button class="pen-btn${m.penWinner === m.sel2 ? ' pen-active' : ''}" data-pen-id="${m.id}" data-pen-sel="sel2">${m.sel2}</button>
+           </div>`
+        : '';
       html += `
-        <div class="lista-row">
+        <div class="lista-row" style="flex-wrap:wrap">
           <div class="lista-info">
-            <span class="lista-grupo">${m.grupo || ''} · ${getRodada(m.filename)}</span>
+            <span class="lista-grupo">${m.grupo || getRodada(m.filename)}</span>
             <span class="lista-hora">⏰ ${m.hora}</span>
           </div>
           <span class="lista-team right">${m.sel1}</span>
           <div class="lista-center">${scoreHTML}</div>
           <span class="lista-team">${m.sel2}</span>
           <div class="lista-badge"><span class="badge badge-none" data-badge="${m.id}"></span></div>
+          ${penHTML}
         </div>`;
     }
+    html += `</div>`;
   }
   if (S.user.isAdmin) html += `<button class="btn-save-res" onclick="saveCSV()" style="margin-top:.5rem">💾 Salvar Resultados</button>`;
 
@@ -1324,10 +1343,31 @@ function renderLista() {
         if (!match) return;
         const val = inp.value.trim();
         match[inp.dataset.side] = val === '' ? '' : Math.max(0, +val || 0);
+        if (match.penWinner) match.penWinner = '';
         refreshBadge(match);
+        refreshPenRow(match);
+      });
+    });
+    el.querySelectorAll('.pen-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const match = S.matches.find(x => x.id === btn.dataset.penId);
+        if (!match) return;
+        match.penWinner = match[btn.dataset.penSel];
+        refreshBadge(match);
+        refreshPenRow(match);
+        saveCSV();
       });
     });
   }
+}
+
+function toggleListaDay(day) {
+  const cards = document.querySelector(`.day-cards[data-lista-day="${day}"]`);
+  if (!cards) return;
+  const nowCollapsed = cards.classList.toggle('collapsed');
+  S.listaDayOpen[day] = !nowCollapsed;
+  const arrow = cards.previousElementSibling?.querySelector('.day-toggle');
+  if (arrow) arrow.textContent = nowCollapsed ? '▼' : '▲';
 }
 
 /* ── Toast ────────────────────────────────────────── */
